@@ -1,0 +1,1418 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>风传</title>
+    <link rel="stylesheet" href="/static/fontawesome/css/all.min.css">
+    <link href="/static/css/inter.css" rel="stylesheet">
+    <link rel="icon" type="image/x-icon" href="/favicon.ico">
+    
+    <!-- PWA Meta Tags -->
+    <meta name="theme-color" content="#cba6f7"> <!-- mauve:dark -->
+    <link rel="manifest" href="/manifest.json">
+    <link rel="apple-touch-icon" href="/icon-192.png">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="ContentShare">
+    <meta name="format-detection" content="telephone=no">
+
+    <style>
+        :root { /* Catppuccin Latte (Light Theme) */
+            --rosewater: #dc8a78; --flamingo: #dd7878; --pink: #ea76cb;
+            --mauve: #8839ef; --red: #d20f39; --maroon: #e64553;
+            --peach: #fe640b; --yellow: #df8e1d; --green: #40a02b;
+            --teal: #179299; --sky: #04a5e5; --sapphire: #209fb5;
+            --blue: #1e66f5; --lavender: #7287fd; --text: #4c4f69;
+            --subtext1: #5c5f77; --subtext0: #6c6f85; --overlay2: #7c7f93;
+            --overlay1: #767b8d; --overlay0: #9ca0b0; --surface2: #acb0be;
+            --surface1: #aab1c0; --surface0: #ccd0da; --base: #eff1f5;
+            --mantle: #e6e9ef; --crust: #d3d8e1;
+        }
+
+        html.dark { /* Catppuccin Mocha (Dark Theme) */
+            --rosewater: #f5e0dc; --flamingo: #f2cdcd; --pink: #f5c2e7;
+            --mauve: #cba6f7; --red: #f38ba8; --maroon: #eba0ac;
+            --peach: #fab387; --yellow: #f9e2af; --green: #a6e3a1;
+            --teal: #94e2d5; --sky: #89dceb; --sapphire: #74c7ec;
+            --blue: #89b4fa; --lavender: #b4befe; --text: #cdd6f4;
+            --subtext1: #bac2de; --subtext0: #a6adc8; --overlay2: #9399b2;
+            --overlay1: #7f849c; --overlay0: #6c7086; --surface2: #585b70;
+            --surface1: #45475a; --surface0: #313244; --base: #1e1e2e;
+            --mantle: #181825; --crust: #11111b;
+        }
+    </style>
+    <script>
+        (function() {
+            function sysDark() {
+                return window.matchMedia('(prefers-color-scheme: dark)').matches;
+            }
+            var t = null;
+            try { t = localStorage.getItem('lc_theme'); } catch (e) {}
+            var dark = t === 'dark' || (!t && sysDark());
+            if (dark) { document.documentElement.classList.add('dark'); }
+            else { document.documentElement.classList.remove('dark'); }
+        })();
+    </script>
+    <script src="/static/js/tailwindcss.js"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    borderRadius: {
+                        '4xl': '2rem',
+                    },
+                    colors: {
+                        'rosewater': 'var(--rosewater)', 'flamingo': 'var(--flamingo)',
+                        'pink': 'var(--pink)', 'mauve': 'var(--mauve)',
+                        'red': 'var(--red)', 'maroon': 'var(--maroon)',
+                        'peach': 'var(--peach)', 'yellow': 'var(--yellow)',
+                        'green': 'var(--green)', 'teal': 'var(--teal)',
+                        'sky': 'var(--sky)', 'sapphire': 'var(--sapphire)',
+                        'blue': 'var(--blue)', 'lavender': 'var(--lavender)',
+                        'text': 'var(--text)', 'subtext1': 'var(--subtext1)',
+                        'subtext0': 'var(--subtext0)', 'overlay2': 'var(--overlay2)',
+                        'overlay1': 'var(--overlay1)', 'overlay0': 'var(--overlay0)',
+                        'surface2': 'var(--surface2)', 'surface1': 'var(--surface1)',
+                        'surface0': 'var(--surface0)', 'base': 'var(--base)',
+                        'mantle': 'var(--mantle)', 'crust': 'var(--crust)',
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+    </style>
+</head>
+<style>
+    html, body { height: 100%; overflow: hidden; }
+    body { position: fixed; inset: 0; }
+    #app { position: absolute; top:0; left:0; right:0; bottom:0; display:flex; flex-direction:column; min-height:0; }
+    #chat { flex:1 1 auto; min-height:0; overflow-y:auto; overscroll-behavior:contain; }
+    #input-zone { flex:0 0 auto; }
+    #msg { min-height:40px; }
+    .fname { word-break: break-all; }
+    #input-zone { padding-bottom: calc(0.75rem + env(safe-area-inset-bottom)); }
+    @media (max-width: 640px) {
+        header h1 { font-size: 17px; }
+        #nick-input { width: 56px; padding-left: 8px; padding-right: 8px; }
+        header { padding-left: 10px; padding-right: 10px; }
+    }
+    html:not(.dark) .shadow-sm { box-shadow: 0 2px 6px rgba(76,79,105,.16), 0 1px 2px rgba(76,79,105,.12); }
+    .md-body { font-size: 13px; line-height: 1.6; }
+    .md-body h1 { font-size: 17px; font-weight: 700; margin: 4px 0 8px; color: var(--mauve); }
+    .md-body h2 { font-size: 15px; font-weight: 700; margin: 14px 0 6px; color: var(--mauve); }
+    .md-body h3 { font-size: 14px; font-weight: 600; margin: 10px 0 4px; }
+    .md-body ul { list-style: disc; padding-left: 20px; margin: 4px 0; }
+    .md-body li { margin: 2px 0; }
+    .md-body code { background: var(--surface0); border-radius: 4px; padding: 1px 5px; font-size: 12px; }
+    .md-body pre { background: var(--surface0); border-radius: 8px; padding: 8px 10px; overflow: auto; }
+    .md-body pre code { background: none; padding: 0; }
+    .md-body blockquote { border-left: 3px solid var(--mauve); padding-left: 10px; margin: 6px 0; color: var(--subtext0); }
+    .md-body hr { border: none; border-top: 1px solid var(--surface1); margin: 12px 0; }
+    .md-body a { color: var(--blue); text-decoration: underline; }
+    .md-body p { margin: 4px 0; }
+    .md-viewer h4, .md-viewer h5, .md-viewer h6 { font-weight: 600; margin: 10px 0 4px; }
+    .md-viewer ol { list-style: decimal; padding-left: 22px; margin: 4px 0; }
+    .md-viewer table { width: 100%; border-collapse: collapse; margin: 10px 0; display: block; overflow-x: auto; }
+    .md-viewer th, .md-viewer td { border: 1px solid var(--surface1); padding: 6px 8px; text-align: left; }
+    .md-viewer th { background: var(--surface0); font-weight: 600; }
+    .md-viewer img { max-width: 100%; height: auto; border-radius: 8px; }
+    .md-viewer input[type="checkbox"] { accent-color: var(--mauve); margin-right: 4px; }
+</style>
+
+<body class="bg-crust text-text antialiased">
+<div id="app" class="w-full">
+    <header class="flex-none px-4 py-3 border-b border-surface0 flex items-center justify-between bg-base">
+        <div class="flex items-center gap-2 min-w-0">
+            <h1 class="text-xl font-bold text-mauve whitespace-nowrap">风传</h1>
+            <span id="version-tag" class="text-[10px] text-overlay1 border border-surface1 rounded px-1 cursor-pointer hover:text-mauve whitespace-nowrap" title="点击查看更新日志">…</span>
+        </div>
+        <div class="flex items-center gap-2 flex-none">
+            <button id="refresh-btn" type="button" class="relative flex-none w-7 h-7 rounded-full bg-surface0 hover:bg-surface1 disabled:opacity-60 disabled:cursor-wait flex items-center justify-center text-overlay1 cursor-pointer text-xs" title="刷新消息" aria-label="刷新消息"><i class="fas fa-rotate-right"></i><span id="refresh-countdown" aria-hidden="true" class="absolute -right-1.5 -bottom-1.5 min-w-4 h-4 px-1 rounded-full bg-blue text-crust text-[9px] font-bold leading-4 text-center" style="font-variant-numeric:tabular-nums;">15</span></button>
+            <button id="search-btn" type="button" class="flex-none w-7 h-7 rounded-full bg-surface0 hover:bg-surface1 flex items-center justify-center text-overlay1 cursor-pointer text-xs" title="搜索消息"><i class="fas fa-magnifying-glass"></i></button>
+            <input id="nick-input" type="text" maxlength="20" placeholder="昵称" class="w-[76px] bg-surface0 rounded-full px-3 py-1 text-xs text-text placeholder-overlay1 focus:outline-none focus:ring-1 focus:ring-mauve" title="填了会记录在每条消息里；不填则只记 IP 地址" />
+            <button id="theme-btn" type="button" class="flex-none w-7 h-7 rounded-full bg-surface0 hover:bg-surface1 flex items-center justify-center text-overlay1 cursor-pointer text-xs" title="切换主题"><i class="fas fa-circle-half-stroke"></i></button>
+            <button id="batch-dl-btn" type="button" class="hidden text-xs text-blue hover:text-sapphire transition-colors whitespace-nowrap" title="批量下载所选">批量下载</button>
+            <button id="select-mode-btn" type="button" class="text-xs text-overlay1 hover:text-blue transition-colors whitespace-nowrap" title="进入多选模式">多选</button>
+            <button id="select-all-btn" type="button" class="hidden text-xs text-overlay1 hover:text-blue transition-colors whitespace-nowrap">全选</button>
+            <button id="select-clear-btn" type="button" class="hidden text-xs text-overlay1 hover:text-blue transition-colors whitespace-nowrap">取消</button>
+            <button id="logout-btn" type="button" class="text-xs text-overlay1 hover:text-red transition-colors whitespace-nowrap" title="退出登录">退出</button>
+        </div>
+    </header>
+
+    <div id="search-bar" class="hidden flex-none px-4 py-2 border-b border-surface0 bg-base items-center gap-2">
+        <i class="fas fa-magnifying-glass text-overlay1 text-xs"></i>
+        <input id="search-input" type="text" placeholder="过滤消息：内容 / 文件名 / 昵称 / IP" class="flex-1 bg-surface0 rounded-full px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-mauve" />
+        <span id="search-count" class="text-[11px] text-overlay1 whitespace-nowrap"></span>
+        <button id="search-close" type="button" class="text-overlay1 hover:text-red text-xs flex-none">关闭</button>
+    </div>
+
+    <main id="chat" class="px-4 py-4 flex flex-col gap-3 bg-crust"></main>
+
+    <div id="input-zone" class="flex-none border-t border-surface0 bg-base px-3 py-3">
+        <div id="file-preview" class="hidden mb-2 items-center justify-between bg-surface0 rounded-xl px-3 py-2 text-sm">
+            <span id="file-name" class="truncate text-text"></span>
+            <button id="file-cancel" type="button" class="text-overlay1 hover:text-red ml-2 flex-none">取消</button>
+        </div>
+        <div id="upload-progress" class="hidden mb-2 bg-surface0 rounded-xl px-3 py-2">
+            <div class="flex items-center justify-between gap-3 text-xs">
+                <span id="upload-progress-text" class="min-w-0 break-all leading-5 text-subtext1" role="status" aria-live="polite">准备上传</span>
+                <span id="upload-progress-percent" class="flex-none text-overlay1" style="font-variant-numeric:tabular-nums;">0%</span>
+            </div>
+            <div id="upload-progress-track" class="mt-1.5 h-1.5 overflow-hidden rounded-full bg-surface1" role="progressbar" aria-label="文件上传进度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+                <div id="upload-progress-bar" class="h-full rounded-full bg-blue" style="width:0%;transition:width 150ms linear;"></div>
+            </div>
+        </div>
+        <form id="input-bar" class="flex items-end gap-2">
+            <input id="file-input" type="file" class="hidden" multiple accept="image/*,video/*,audio/*,text/*,application/*" />
+            <input id="dir-input" type="file" class="hidden" webkitdirectory />
+            <button id="dir-btn" type="button" class="flex-none w-10 h-10 rounded-full bg-surface0 hover:bg-surface1 flex items-center justify-center text-overlay1 cursor-pointer transition-colors" title="上传文件夹（整体打包成 zip）">
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
+            </button>
+                        <button id="attach-btn" type="button" class="flex-none w-10 h-10 rounded-full bg-surface0 hover:bg-surface1 flex items-center justify-center text-overlay1 cursor-pointer transition-colors" title="发送文件（可多选）">
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"></path></svg>
+            </button>
+            <textarea id="msg" rows="1" class="flex-1 resize-none bg-surface0 rounded-2xl px-4 py-2.5 text-text placeholder-overlay1 focus:outline-none focus:ring-2 focus:ring-mauve"></textarea>
+            <button id="send-btn" type="submit" class="flex-none w-10 h-10 rounded-full bg-blue hover:bg-sapphire text-crust flex items-center justify-center cursor-pointer transition-colors" title="发送">
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"></path></svg>
+            </button>
+        </form>
+    </div>
+</div>
+
+<div id="drop-ov" class="hidden fixed inset-0 z-40 flex items-center justify-center bg-black/60 pointer-events-none">
+    <div class="border-2 border-dashed border-mauve rounded-2xl px-10 py-8 text-mauve text-lg bg-crust">松开鼠标即可上传</div>
+</div>
+
+<div id="sbar" style="display:none;position:fixed;left:4px;top:17vh;height:66vh;width:14px;z-index:30;touch-action:none;">
+    <div style="position:absolute;left:5px;top:0;bottom:0;width:4px;background:rgba(127,127,127,.25);border-radius:2px;"></div>
+    <div id="sbar-thumb" style="position:absolute;left:3px;width:8px;background:rgba(127,127,127,.7);border-radius:4px;cursor:grab;touch-action:none;"></div>
+</div>
+
+<div id="copy-toast" class="hidden fixed left-1/2 -translate-x-1/2 z-50" style="bottom: calc(110px + env(safe-area-inset-bottom));">
+    <div id="copy-toast-inner" class="bg-base border border-surface1 shadow-lg rounded-full px-4 py-2 text-xs text-text max-w-[85vw] truncate cursor-pointer"></div>
+</div>
+
+<div id="lightbox" class="hidden fixed inset-0 bg-black/80 z-50 flex flex-col items-center justify-center p-4">
+    <img id="lightbox-img" class="max-h-[85vh] max-w-full object-contain" />
+    <div class="mt-3 flex gap-3">
+        <a id="lightbox-dl" class="text-white/90 text-sm hover:text-white cursor-pointer">下载原图</a>
+        <span id="lightbox-close" class="text-white/90 text-sm hover:text-white cursor-pointer">关闭</span>
+    </div>
+</div>
+
+<div id="textview" class="hidden fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
+    <div class="bg-crust rounded-2xl w-full max-w-2xl max-h-[80vh] flex flex-col p-4">
+        <div class="flex items-center justify-between mb-2">
+            <span id="textview-title" class="text-sm text-subtext0 truncate"></span>
+            <span id="textview-close" class="text-overlay1 hover:text-red cursor-pointer flex-none">关闭</span>
+        </div>
+        <pre id="textview-body" class="flex-1 overflow-auto bg-base rounded-xl p-3 text-sm whitespace-pre-wrap break-words"></pre>
+        <div id="textview-rendered" class="md-body md-viewer hidden flex-1 overflow-auto bg-base rounded-xl p-4 break-words"></div>
+    </div>
+</div>
+
+<div id="cl-modal" class="hidden fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
+    <div class="bg-crust rounded-2xl w-full max-w-2xl max-h-[80vh] flex flex-col p-5">
+        <div class="flex items-center justify-between mb-3">
+            <h2 class="text-lg font-semibold text-mauve">更新日志</h2>
+            <span id="cl-close" class="text-overlay1 hover:text-red cursor-pointer">关闭</span>
+        </div>
+        <div id="cl-body" class="md-body flex-1 overflow-auto bg-base rounded-xl p-4"></div>
+    </div>
+</div>
+
+<script src="/static/js/jszip.min.js"></script>
+<script src="/static/js/marked.min.js"></script>
+<script>
+    var chat = document.getElementById('chat');
+    var msg = document.getElementById('msg');
+    var sendBtn = document.getElementById('send-btn');
+    var attachBtn = document.getElementById('attach-btn');
+    var dirBtn = document.getElementById('dir-btn');
+    var fileInput = document.getElementById('file-input');
+    var refreshBtn = document.getElementById('refresh-btn');
+    var refreshCountdownEl = document.getElementById('refresh-countdown');
+    var dirInput = document.getElementById('dir-input');
+    var filePreview = document.getElementById('file-preview');
+    var fileName = document.getElementById('file-name');
+    var fileCancel = document.getElementById('file-cancel');
+    var uploadProgress = document.getElementById('upload-progress');
+    var uploadProgressText = document.getElementById('upload-progress-text');
+    var uploadProgressPercent = document.getElementById('upload-progress-percent');
+    var uploadProgressTrack = document.getElementById('upload-progress-track');
+    var uploadProgressBar = document.getElementById('upload-progress-bar');
+    var nickInput = document.getElementById('nick-input');
+    var themeBtn = document.getElementById('theme-btn');
+    var versionTag = document.getElementById('version-tag');
+    var pendingFiles = [];
+    var pendingLabel = '';
+
+    try { nickInput.value = localStorage.getItem('lc_nick') || ''; } catch (e) {}
+    nickInput.addEventListener('input', function () {
+        try { localStorage.setItem('lc_nick', nickInput.value.trim()); } catch (e) {}
+    });
+    function getNick() { return nickInput.value.trim(); }
+    function withSender(fd) {
+        var n = getNick();
+        if (n) fd.append('sender', n);
+        return fd;
+    }
+
+    // ---- theme ----
+    var prefersDark = window.matchMedia('(prefers-color-scheme: dark)');
+    var serverDefaultTheme = 'auto';
+    function userTheme() { try { return localStorage.getItem('lc_theme'); } catch (e) { return null; } }
+    function setUserTheme(t) {
+        try {
+            if (t) localStorage.setItem('lc_theme', t);
+            else localStorage.removeItem('lc_theme');
+        } catch (e) {}
+    }
+    function applyThemeAttr(t) {
+        if (t === 'dark') document.documentElement.classList.add('dark');
+        else document.documentElement.classList.remove('dark');
+    }
+    function effectiveTheme() {
+        var u = userTheme();
+        var base = u || serverDefaultTheme;
+        if (base === 'auto') return prefersDark.matches ? 'dark' : 'light';
+        return base;
+    }
+    function refreshTheme() {
+        applyThemeAttr(effectiveTheme());
+        var u = userTheme();
+        var icon = u === 'dark' ? 'fa-moon' : (u === 'light' ? 'fa-sun' : 'fa-circle-half-stroke');
+        themeBtn.innerHTML = '<i class="fas ' + icon + '"></i>';
+        var nameMap = { auto: '跟随系统', light: '亮色', dark: '暗色' };
+        var cur = u ? nameMap[u] : ('默认：' + nameMap[serverDefaultTheme]);
+        themeBtn.title = '当前主题：' + cur + '（点击切换）';
+    }
+    themeBtn.addEventListener('click', function () {
+        var u = userTheme() || 'auto';
+        var next = u === 'auto' ? 'light' : (u === 'light' ? 'dark' : 'auto');
+        setUserTheme(next === 'auto' ? null : next);
+        refreshTheme();
+    });
+    prefersDark.addEventListener('change', function () { refreshTheme(); });
+    fetch('/api/settings').then(function (r) { return r.json(); }).then(function (s) {
+        serverDefaultTheme = s.defaultTheme || 'auto';
+        refreshTheme();
+    }).catch(function () {});
+    refreshTheme();
+
+    var selectMode = false;
+    var selected = {};
+    var selectModeBtn = document.getElementById('select-mode-btn');
+    var selectAllBtn = document.getElementById('select-all-btn');
+    var selectClearBtn = document.getElementById('select-clear-btn');
+    var batchDlBtn = document.getElementById('batch-dl-btn');
+
+    function updateBatchUI() {
+        var n = Object.keys(selected).length;
+        selectModeBtn.classList.toggle('hidden', selectMode);
+        selectAllBtn.classList.toggle('hidden', !selectMode);
+        selectClearBtn.classList.toggle('hidden', !selectMode);
+        batchDlBtn.classList.toggle('hidden', !selectMode || n === 0);
+    }
+    selectModeBtn.addEventListener('click', function () { selectMode = true; selected = {}; updateBatchUI(); loadAll(); });
+    selectClearBtn.addEventListener('click', function () { selectMode = false; selected = {}; updateBatchUI(); loadAll(); });
+    selectAllBtn.addEventListener('click', function () {
+        var total = chat.querySelectorAll('[data-id]').length;
+        if (Object.keys(selected).length === total) { selected = {}; }
+        else { selected = {}; chat.querySelectorAll('[data-id]').forEach(function (el) { selected[el.getAttribute('data-id')] = 1; }); }
+        loadAll();
+    });
+    batchDlBtn.addEventListener('click', function () {
+        var ids = Object.keys(selected);
+        if (!ids.length) return;
+        fetch('/api/batch-download', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(ids)
+        }).then(function (r) { return r.blob(); }).then(function (b) {
+            var a = document.createElement('a');
+            a.href = URL.createObjectURL(b);
+            a.download = 'lanchat-' + Date.now() + '.zip';
+            a.click();
+            URL.revokeObjectURL(a.href);
+        }).catch(function () { alert('批量下载失败'); });
+    });
+
+    function autoSize() { msg.style.height = 'auto'; msg.style.height = Math.min(msg.scrollHeight, 120) + 'px'; }
+    msg.addEventListener('input', autoSize);
+    var stickBottom = true;
+    var renderingChat = false;
+    function inBottomZone() { return chat.scrollHeight - chat.scrollTop - chat.clientHeight < 120; }
+    chat.addEventListener('scroll', function () {
+        if (!renderingChat) stickBottom = inBottomZone();
+    });
+    function captureChatAnchor() {
+        var chatRect = chat.getBoundingClientRect();
+        var nodes = chat.querySelectorAll('[data-id]');
+        for (var i = 0; i < nodes.length; i++) {
+            var rect = nodes[i].getBoundingClientRect();
+            if (rect.bottom > chatRect.top + 1 && rect.top < chatRect.bottom - 1) {
+                return {
+                    id: nodes[i].getAttribute('data-id'),
+                    offset: rect.top - chatRect.top,
+                    scrollTop: chat.scrollTop
+                };
+            }
+        }
+        return { id: null, offset: 0, scrollTop: chat.scrollTop };
+    }
+    function restoreChatAnchor(anchor) {
+        if (!anchor || stickBottom) return;
+        var apply = function () {
+            if (stickBottom) return;
+            var target = null;
+            if (anchor.id) {
+                var nodes = chat.querySelectorAll('[data-id]');
+                for (var i = 0; i < nodes.length; i++) {
+                    if (nodes[i].getAttribute('data-id') === anchor.id) {
+                        target = nodes[i];
+                        break;
+                    }
+                }
+            }
+            if (target) {
+                var currentOffset = target.getBoundingClientRect().top - chat.getBoundingClientRect().top;
+                chat.scrollTop += currentOffset - anchor.offset;
+            } else {
+                chat.scrollTop = anchor.scrollTop;
+            }
+        };
+        requestAnimationFrame(apply);
+        setTimeout(apply, 120);
+        setTimeout(apply, 400);
+    }
+    function scrollBottom() {
+        if (!stickBottom) return;
+        requestAnimationFrame(function () { chat.scrollTop = chat.scrollHeight; });
+    }
+    function kickBottom() {
+        stickBottom = true;
+        [0, 120, 350, 700, 1200, 2000].forEach(function (ms) {
+            setTimeout(function () {
+                if (!stickBottom) return;
+                chat.scrollTop = chat.scrollHeight;
+            }, ms);
+        });
+    }
+
+    var IMG = /\.(png|jpe?g|gif|webp|bmp|svg|avif)$/i;
+    var VIDEO = /\.(mp4|m4v|webm|ogv|mov)$/i;
+    var NOVIEW = /\.(exe|dll|msi|msp|cab|iso|img|bin|dat|db|sqlite|sqlite3|zip|rar|7z|gz|tgz|tar|xz|bz2|jar|war|apk|ipa|wasm|class|pyc|pyd|o|obj|lib|so|ttf|otf|woff2?|eot|ico|mp3|wav|flac|aac|m4a|ogg|opus|wma|mp4|mkv|avi|mov|wmv|flv|webm|m4v|mpeg|mpg|rmvb|pdf|docx?|xlsx?|pptx?|wps|et|dps|odt|ods|odp|psd|ai|swf|mdb|accdb)$/i;
+
+    function esc(s) { return String(s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+    function highlightInto(el, text) {
+        var q = searchQuery;
+        el.textContent = '';
+        if (!q) { el.textContent = text; return; }
+        var lower = text.toLowerCase(), ql = q.toLowerCase();
+        var i = 0, idx;
+        while ((idx = lower.indexOf(ql, i)) !== -1) {
+            if (idx > i) el.appendChild(document.createTextNode(text.slice(i, idx)));
+            var m = document.createElement('mark');
+            m.className = 'bg-yellow text-crust rounded px-0.5';
+            m.textContent = text.slice(idx, idx + q.length);
+            el.appendChild(m);
+            i = idx + q.length;
+        }
+        if (i < text.length) el.appendChild(document.createTextNode(text.slice(i)));
+    }
+    function fmtTime(ts) {
+        if (!ts) return '';
+        var d = new Date(ts * 1000);
+        var p = function (x) { return x < 10 ? '0' + x : x; };
+        return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
+    }
+    function metaLine(e) {
+        var parts = [];
+        if (e.Sender) parts.push(e.Sender);
+        if (e.From) parts.push(e.From);
+        var t = fmtTime(e.Ts);
+        var s = parts.join(' · ');
+        if (t) s = (s ? s + ' · ' : '') + t;
+        return s;
+    }
+    function metaDiv(e) {
+        var m = document.createElement('div');
+        m.className = 'text-[10px] text-overlay1 mt-0.5 pr-1';
+        m.textContent = metaLine(e);
+        return m;
+    }
+    function nameDiv(name) {
+        var s = document.createElement('div');
+        s.className = 'fname text-sm font-medium';
+        s.title = name;
+        highlightInto(s, name);
+        return s;
+    }
+    function actionRow(id, filename, allowView) {
+        var row = document.createElement('div');
+        row.className = 'flex items-center gap-4 text-xs mt-1.5';
+        var dl = document.createElement('a');
+        dl.href = '/download/' + encodeURI(id);
+        dl.className = 'text-blue hover:text-sapphire';
+        dl.textContent = '下载';
+        row.appendChild(dl);
+        if (allowView) {
+            var vw = document.createElement('span');
+            vw.className = 'text-mauve hover:text-pink cursor-pointer';
+            vw.textContent = '查看';
+            vw.addEventListener('click', function () { openText(id, filename); });
+            row.appendChild(vw);
+        }
+        return row;
+    }
+
+    function addBubble(e) {
+        var wrap = document.createElement('div');
+        wrap.className = 'flex items-start gap-2 w-full ' + (selectMode ? 'justify-start' : 'justify-end');
+        wrap.setAttribute('data-id', e.ID);
+        if (selectMode) {
+            var cb = document.createElement('input');
+            cb.type = 'checkbox';
+            cb.className = 'mt-2 flex-none';
+            cb.checked = !!selected[e.ID];
+            cb.addEventListener('change', function () {
+                if (cb.checked) selected[e.ID] = 1; else delete selected[e.ID];
+                updateBatchUI();
+            });
+            wrap.appendChild(cb);
+        }
+        var col = document.createElement('div');
+        col.className = 'flex flex-col flex-1 ' + (selectMode ? 'items-start' : 'items-end') + ' min-w-0';
+        if (e.Type === 'file') {
+            var isImg = IMG.test(e.Filename);
+            var isVideo = VIDEO.test(e.Filename);
+            if (isImg) {
+                var bub = document.createElement('div');
+                bub.className = 'bg-base border border-surface1 rounded-2xl px-2 py-2 shadow-sm cursor-pointer max-w-[80%]';
+                var im = document.createElement('img');
+                im.src = '/download/' + encodeURI(e.ID);
+                im.className = 'rounded-xl max-h-56 max-w-full object-cover';
+                im.loading = 'lazy';
+                im.addEventListener('load', function () { if (stickBottom) { chat.scrollTop = chat.scrollHeight; } });
+                im.addEventListener('click', function () { openLightbox(e.ID); });
+                bub.appendChild(im);
+                var cap = document.createElement('div');
+                cap.className = 'text-[10px] text-overlay1 mt-1 px-1 flex items-center justify-between gap-3';
+                var nm = document.createElement('span');
+                nm.className = 'fname';
+                nm.textContent = e.Filename;
+                nm.title = e.Filename;
+                cap.appendChild(nm);
+                var dl = document.createElement('a');
+                dl.href = '/download/' + encodeURI(e.ID);
+                dl.className = 'text-blue hover:text-sapphire flex-none';
+                dl.textContent = '下载';
+                cap.appendChild(dl);
+                bub.appendChild(cap);
+                col.appendChild(bub);
+            } else if (isVideo) {
+                var vbub = document.createElement('div');
+                vbub.className = 'bg-base border border-surface1 rounded-2xl px-2 py-2 shadow-sm max-w-[85%]';
+                var vd = document.createElement('video');
+                vd.src = '/download/' + encodeURI(e.ID);
+                vd.poster = '/video-thumb/' + encodeURI(e.ID);
+                vd.controls = true;
+                vd.loading = 'lazy';
+                vd.width = 640;
+                vd.height = 360;
+                vd.setAttribute('playsinline', '');
+                vd.preload = 'metadata';
+                vd.className = 'rounded-xl max-h-64 w-full bg-surface0';
+                vd.addEventListener('loadedmetadata', function () {
+                    if (stickBottom) { chat.scrollTop = chat.scrollHeight; }
+                    if (vd.videoWidth === 0) {
+                        var vhint = document.createElement('div');
+                        vhint.className = 'text-[10px] text-peach mt-1 px-1';
+                        vhint.textContent = '浏览器无法解码此视频（可能是 H.265/HEVC 编码），请下载后用播放器观看';
+                        vbub.appendChild(vhint);
+                    }
+                });
+                vbub.appendChild(vd);
+                var vcap = document.createElement('div');
+                vcap.className = 'text-[10px] text-overlay1 mt-1 px-1 flex items-center justify-between gap-3';
+                var vnm = document.createElement('span');
+                vnm.className = 'fname';
+                vnm.textContent = e.Filename;
+                vnm.title = e.Filename;
+                vcap.appendChild(vnm);
+                var vdl = document.createElement('a');
+                vdl.href = '/download/' + encodeURI(e.ID);
+                vdl.className = 'text-blue hover:text-sapphire flex-none';
+                vdl.textContent = '下载';
+                vcap.appendChild(vdl);
+                vbub.appendChild(vcap);
+                col.appendChild(vbub);
+            } else {
+                var bub = document.createElement('div');
+                bub.className = 'bg-base text-text border border-surface1 rounded-2xl rounded-br-md px-3 py-2.5 shadow-sm max-w-[95%]';
+                var head = document.createElement('div');
+                head.className = 'flex items-center gap-2 mb-1.5 min-w-0';
+                head.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-mauve flex-none"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>';
+                head.appendChild(nameDiv(e.Filename));
+                bub.appendChild(head);
+                bub.appendChild(actionRow(e.ID, e.Filename, !NOVIEW.test(e.Filename)));
+                col.appendChild(bub);
+            }
+            col.appendChild(metaDiv(e));
+        } else if (e.Type === 'link') {
+            var bub = document.createElement('div');
+            bub.className = 'max-w-[80%] bg-base text-text border border-surface1 rounded-2xl rounded-br-md px-4 py-2.5 shadow-sm';
+            var a = document.createElement('a');
+            a.href = e.Content; a.target = '_blank'; a.rel = 'noopener';
+            a.className = 'text-blue hover:text-sapphire break-all text-[15px]';
+            a.textContent = e.Content;
+            bub.appendChild(a);
+            col.appendChild(bub);
+            col.appendChild(metaDiv(e));
+        } else {
+            var bub = document.createElement('div');
+            bub.className = 'max-w-[80%] bg-blue text-crust rounded-2xl rounded-br-md px-4 py-2.5 break-words whitespace-pre-wrap text-[15px] shadow-sm';
+            highlightInto(bub, e.Content);
+            col.appendChild(bub);
+            var copyBtn = document.createElement('button');
+            copyBtn.type = 'button';
+            copyBtn.className = 'mt-1 inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] text-overlay1 hover:text-blue hover:bg-surface0 transition-colors cursor-pointer';
+            copyBtn.title = '复制这条文本消息';
+            copyBtn.setAttribute('data-copy-message', '');
+            copyBtn.innerHTML = '<i class="fas fa-copy" aria-hidden="true"></i><span data-copy-label>复制</span>';
+            copyBtn.addEventListener('click', function () { copyMessageText(e.Content, copyBtn); });
+            col.appendChild(copyBtn);
+            col.appendChild(metaDiv(e));
+        }
+        wrap.appendChild(col);
+        chat.appendChild(wrap);
+    }
+
+    var loadAllSequence = 0;
+    var lastRenderSignature = null;
+    function loadAll() {
+        var requestSequence = ++loadAllSequence;
+        return fetch('/api/entries').then(function (res) {
+            if (res.status === 401) { location.href = '/login'; throw new Error('401'); }
+            return res.json();
+        }).then(function (list) {
+            if (requestSequence !== loadAllSequence) return;
+            var textIds = {};
+            var newestText = null;
+            for (var ti = 0; ti < list.length; ti++) {
+                if (list[ti].Type === 'text') {
+                    textIds[list[ti].ID] = 1;
+                    newestText = list[ti];
+                }
+            }
+            if (seenTextIds === null) {
+                seenTextIds = textIds;
+            } else {
+                if (newestText && !seenTextIds[newestText.ID]) { maybeAutoCopy(newestText); }
+                seenTextIds = textIds;
+            }
+            var q = searchQuery.toLowerCase();
+            var shown = list;
+            if (q) {
+                shown = list.filter(function (e) {
+                    var hay = [e.Content || '', e.Filename || '', e.Sender || '', e.From || ''].join(' ');
+                    return hay.toLowerCase().indexOf(q) !== -1;
+                });
+            }
+            var selectionKey = selectMode ? Object.keys(selected).sort().join(',') : 'browse';
+            var renderSignature = q + '\u0000' + selectionKey + '\u0000' + JSON.stringify(shown);
+            if (renderSignature === lastRenderSignature) return;
+            lastRenderSignature = renderSignature;
+            var wasAtBottom = stickBottom;
+            var anchor = wasAtBottom ? null : captureChatAnchor();
+            renderingChat = true;
+            chat.innerHTML = '';
+            if (!shown.length) {
+                var empty = document.createElement('div');
+                empty.className = 'text-center text-overlay1 text-sm mt-10';
+                empty.textContent = q ? '没有匹配的消息' : '还没有内容，发第一条消息吧';
+                chat.appendChild(empty);
+            } else {
+                shown.forEach(addBubble);
+            }
+            renderingChat = false;
+            stickBottom = wasAtBottom;
+            if (q) {
+                document.getElementById('search-count').textContent = shown.length + ' 条匹配';
+                chat.scrollTop = 0;
+                stickBottom = false;
+            } else if (wasAtBottom) {
+                scrollBottom();
+            } else {
+                restoreChatAnchor(anchor);
+            }
+            updateBatchUI();
+            setTimeout(sbarUpdate, 60);
+        }).catch(function (err) { console.error(err); });
+    }
+
+    var lightbox = document.getElementById('lightbox');
+    var lightboxImg = document.getElementById('lightbox-img');
+    var lightboxDl = document.getElementById('lightbox-dl');
+    document.getElementById('lightbox-close').addEventListener('click', function () { lightbox.classList.add('hidden'); });
+    lightbox.addEventListener('click', function (e) { if (e.target === lightbox) lightbox.classList.add('hidden'); });
+    function openLightbox(id) { lightboxImg.src = '/download/' + encodeURI(id); lightboxDl.href = '/download/' + encodeURI(id); lightbox.classList.remove('hidden'); }
+
+    var textview = document.getElementById('textview');
+    document.getElementById('textview-close').addEventListener('click', function () { textview.classList.add('hidden'); });
+    textview.addEventListener('click', function (e) { if (e.target === textview) textview.classList.add('hidden'); });
+    function decodeSmart(u8) {
+        try {
+            return new TextDecoder('utf-8', { fatal: true }).decode(u8);
+        } catch (e) {
+            try {
+                return new TextDecoder('gbk').decode(u8);
+            } catch (e2) {
+                return new TextDecoder('utf-8').decode(u8);
+            }
+        }
+    }
+
+    function safeMarkdownUrl(value) {
+        var url = String(value || '').trim();
+        if (!url) return '';
+        if (/^(https?:|mailto:|tel:)/i.test(url)) return url;
+        if (url.charAt(0) === '#' || url.charAt(0) === '/' || url.indexOf('./') === 0 || url.indexOf('../') === 0) return url;
+        return '';
+    }
+
+    function sanitizeMarkdownContainer(container) {
+        var allowedTags = {
+            a: 1, p: 1, br: 1, hr: 1, h1: 1, h2: 1, h3: 1, h4: 1, h5: 1, h6: 1,
+            ul: 1, ol: 1, li: 1, strong: 1, em: 1, b: 1, i: 1, del: 1,
+            blockquote: 1, code: 1, pre: 1, table: 1, thead: 1, tbody: 1,
+            tr: 1, th: 1, td: 1, img: 1, span: 1
+        };
+        var blockedTags = { script: 1, style: 1, iframe: 1, object: 1, embed: 1, form: 1, input: 1, button: 1, svg: 1, math: 1, link: 1, meta: 1 };
+        var allowedAttrs = { href: 1, title: 1, src: 1, alt: 1, class: 1, start: 1 };
+        var nodes = Array.prototype.slice.call(container.querySelectorAll('*'));
+        nodes.forEach(function (node) {
+            var tag = node.tagName.toLowerCase();
+            if (blockedTags[tag]) {
+                node.remove();
+                return;
+            }
+            if (!allowedTags[tag]) {
+                node.replaceWith.apply(node, Array.prototype.slice.call(node.childNodes));
+                return;
+            }
+            Array.prototype.slice.call(node.attributes).forEach(function (attr) {
+                if (!allowedAttrs[attr.name.toLowerCase()]) node.removeAttribute(attr.name);
+            });
+            if (tag === 'a') {
+                var href = safeMarkdownUrl(node.getAttribute('href'));
+                if (!href) node.removeAttribute('href');
+                else node.setAttribute('href', href);
+                node.setAttribute('target', '_blank');
+                node.setAttribute('rel', 'noopener noreferrer');
+            }
+            if (tag === 'img') {
+                var src = safeMarkdownUrl(node.getAttribute('src'));
+                if (!src) node.removeAttribute('src');
+                else node.setAttribute('src', src);
+                node.setAttribute('loading', 'lazy');
+            }
+        });
+    }
+
+    function renderMarkdownInto(container, text) {
+        try {
+            var renderer = new marked.Renderer();
+            renderer.html = function (html) { return esc(html); };
+            var html = marked.parse(text, { gfm: true, breaks: true, renderer: renderer });
+            if ('setHTML' in Element.prototype) {
+                container.setHTML(html, {
+                    sanitizer: {
+                        elements: ['a', 'p', 'br', 'hr', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'ul', 'ol', 'li', 'strong', 'em', 'b', 'i', 'del', 'blockquote', 'code', 'pre', 'table', 'thead', 'tbody', 'tr', 'th', 'td', 'img', 'span'],
+                        attributes: ['href', 'title', 'src', 'alt', 'class', 'start'],
+                        replaceWithChildrenElements: ['div']
+                    }
+                });
+            } else {
+                var template = document.createElement('template');
+                template.innerHTML = html;
+                container.replaceChildren.apply(container, Array.prototype.slice.call(template.content.childNodes));
+            }
+            sanitizeMarkdownContainer(container);
+            return true;
+        } catch (err) {
+            console.error('Markdown render failed', err);
+            return false;
+        }
+    }
+
+    function openText(id, name) {
+        var titleEl = document.getElementById('textview-title');
+        var bodyEl = document.getElementById('textview-body');
+        var renderedEl = document.getElementById('textview-rendered');
+        var isMarkdown = /\.(md|markdown|mdown|mkd)$/i.test(name || '');
+        var showPlainText = function (text) {
+            renderedEl.classList.add('hidden');
+            renderedEl.replaceChildren();
+            bodyEl.classList.remove('hidden');
+            bodyEl.textContent = text;
+        };
+        titleEl.textContent = name;
+        renderedEl.classList.add('hidden');
+        renderedEl.replaceChildren();
+        bodyEl.classList.remove('hidden');
+        bodyEl.textContent = '加载中…';
+        textview.classList.remove('hidden');
+        fetch('/download/' + encodeURI(id)).then(function (r) {
+            if (!r.ok) throw new Error('HTTP ' + r.status);
+            var cl = parseInt(r.headers.get('Content-Length') || '0', 10);
+            if (cl > 1048576) {
+                if (r.body && r.body.cancel) { try { r.body.cancel(); } catch (err) {} }
+                return { big: true, size: cl };
+            }
+            return r.blob().then(function (b) {
+                if (b.size > 1048576) { return { big: true, size: b.size }; }
+                return b.arrayBuffer().then(function (ab) {
+                    return { big: false, text: decodeSmart(new Uint8Array(ab)) };
+                });
+            });
+        }).then(function (res) {
+            if (res.big) {
+                var mb = (res.size / 1048576).toFixed(1);
+                showPlainText('');
+                var tip = document.createElement('div');
+                tip.className = 'text-sm text-subtext0 mb-3 font-sans';
+                tip.textContent = '文件较大（' + mb + ' MB），不适合在线预览。';
+                var dl = document.createElement('a');
+                dl.href = '/download/' + encodeURI(id);
+                dl.className = 'text-blue hover:text-sapphire text-sm font-sans';
+                dl.textContent = '点击下载查看';
+                bodyEl.appendChild(tip);
+                bodyEl.appendChild(dl);
+            } else {
+                if (isMarkdown && window.marked && renderMarkdownInto(renderedEl, res.text)) {
+                    bodyEl.classList.add('hidden');
+                    renderedEl.classList.remove('hidden');
+                } else {
+                    showPlainText(res.text);
+                }
+            }
+        }).catch(function (e) {
+            showPlainText('读取失败：' + (e && e.message ? e.message : e));
+        });
+    }
+
+    var clModal = document.getElementById('cl-modal');
+    document.getElementById('cl-close').addEventListener('click', function () { clModal.classList.add('hidden'); });
+    clModal.addEventListener('click', function (e) { if (e.target === clModal) clModal.classList.add('hidden'); });
+    versionTag.addEventListener('click', function () {
+        fetch('/api/changelog').then(function (r) { return r.text(); }).then(function (t) {
+            var body = document.getElementById('cl-body');
+            if (window.marked) { body.innerHTML = marked.parse(t); }
+            else { body.textContent = t; }
+            clModal.classList.remove('hidden');
+        }).catch(function () { alert('读取更新日志失败'); });
+    });
+
+    var updateSource = null;
+    var sseReconnectTimer = null;
+    function connectSSE() {
+        if (sseReconnectTimer) {
+            clearTimeout(sseReconnectTimer);
+            sseReconnectTimer = null;
+        }
+        if (updateSource) {
+            updateSource.close();
+            updateSource = null;
+        }
+        var es = new EventSource('/api/updates');
+        updateSource = es;
+        es.onmessage = function (ev) { if (ev.data === 'content_updated') loadAll(); };
+        es.onerror = function () {
+            if (updateSource !== es) return;
+            es.close();
+            updateSource = null;
+            fetch('/api/entries').then(function (r) { if (r.status === 401) location.href = '/login'; }).catch(function () {});
+            sseReconnectTimer = setTimeout(connectSSE, 3000);
+        };
+    }
+
+    var lastResumeRefresh = 0;
+    function refreshAfterResume() {
+        if (document.hidden) return;
+        var now = Date.now();
+        if (now - lastResumeRefresh < 800) return;
+        lastResumeRefresh = now;
+        resetRefreshCountdown();
+        runRefresh(false);
+        connectSSE();
+    }
+    document.addEventListener('visibilitychange', refreshAfterResume);
+    window.addEventListener('pageshow', refreshAfterResume);
+    window.addEventListener('focus', refreshAfterResume);
+    window.addEventListener('online', refreshAfterResume);
+
+    function sendText(text) {
+        return fetch('/submit', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ content: text, type: 'text', expiry: 'Never', sender: getNick() })
+        });
+    }
+    var uploadProgressHideTimer = null;
+    function formatBytes(bytes) {
+        if (!bytes) return '0 B';
+        var units = ['B', 'KB', 'MB', 'GB'];
+        var i = 0, value = bytes;
+        while (value >= 1024 && i < units.length - 1) { value /= 1024; i++; }
+        return (i === 0 ? value.toFixed(0) : value.toFixed(value >= 10 ? 1 : 2)) + ' ' + units[i];
+    }
+    function setUploadProgress(text, loaded, total, failed, overridePercent) {
+        if (uploadProgressHideTimer) {
+            clearTimeout(uploadProgressHideTimer);
+            uploadProgressHideTimer = null;
+        }
+        var percent = typeof overridePercent === 'number'
+            ? overridePercent
+            : (total > 0 ? Math.max(0, Math.min(100, loaded / total * 100)) : 0);
+        var shownPercent = failed ? '失败' : Math.round(percent) + '%';
+        uploadProgressText.textContent = total > 0 && !failed && typeof overridePercent !== 'number'
+            ? text + ' · ' + formatBytes(Math.min(loaded, total)) + ' / ' + formatBytes(total)
+            : text;
+        uploadProgressPercent.textContent = shownPercent;
+        uploadProgressBar.style.width = (failed ? 100 : percent) + '%';
+        uploadProgressBar.className = 'h-full rounded-full ' + (failed ? 'bg-red' : 'bg-blue');
+        uploadProgressTrack.setAttribute('aria-valuenow', failed ? '100' : String(Math.round(percent)));
+        uploadProgressTrack.setAttribute('aria-valuetext', shownPercent);
+        uploadProgress.classList.remove('hidden');
+    }
+    function finishUploadProgress(ok) {
+        setUploadProgress(ok ? '上传完成' : '上传失败', 0, 0, !ok, 100);
+        uploadProgressHideTimer = setTimeout(function () {
+            uploadProgress.classList.add('hidden');
+            uploadProgressHideTimer = null;
+        }, ok ? 700 : 2600);
+    }
+    function sendBlob(blob, filename, onProgress) {
+        return new Promise(function (resolve, reject) {
+            var fd = new FormData();
+            fd.append('file-upload', blob, filename);
+            fd.append('expiry', 'Never');
+            withSender(fd);
+            var xhr = new XMLHttpRequest();
+            xhr.open('POST', '/submit');
+            xhr.withCredentials = true;
+            xhr.upload.onprogress = function (ev) {
+                if (ev.lengthComputable && onProgress) onProgress(ev.loaded, ev.total);
+            };
+            xhr.onload = function () {
+                if (xhr.status >= 200 && xhr.status < 300) {
+                    resolve();
+                    return;
+                }
+                if (xhr.status === 401) location.href = '/login';
+                reject(new Error('HTTP ' + xhr.status));
+            };
+            xhr.onerror = function () { reject(new Error('网络错误')); };
+            xhr.onabort = function () { reject(new Error('上传已取消')); };
+            xhr.send(fd);
+        });
+    }
+    function uploadBlobWithProgress(blob, filename, label) {
+        setUploadProgress(label || ('正在上传 · ' + filename), 0, blob.size, false);
+        return sendBlob(blob, filename, function (loaded) {
+            setUploadProgress(label || ('正在上传 · ' + filename), loaded, blob.size, false);
+        }).then(function () {
+            finishUploadProgress(true);
+        }).catch(function (err) {
+            finishUploadProgress(false);
+            throw err;
+        });
+    }
+    function uploadSilently(files) {
+        if (!files.length) return Promise.resolve();
+        var totalBytes = files.reduce(function (sum, file) { return sum + file.size; }, 0);
+        var completedBytes = 0;
+        var chain = Promise.resolve();
+        files.forEach(function (f, index) {
+            chain = chain.then(function () {
+                var baseText = '正在上传 ' + (index + 1) + '/' + files.length + ' · ' + f.name;
+                setUploadProgress(baseText, completedBytes, totalBytes, false);
+                return sendBlob(f, f.name, function (loaded) {
+                    var ratio = f.size > 0 ? Math.min(loaded / f.size, 1) : 1;
+                    setUploadProgress(baseText, completedBytes + f.size * ratio, totalBytes, false);
+                }).then(function () {
+                    completedBytes += f.size;
+                });
+            });
+        });
+        return chain.then(function () {
+            finishUploadProgress(true);
+        }).catch(function (err) {
+            finishUploadProgress(false);
+            throw err;
+        });
+    }
+    function setPending(files, label) {
+        pendingFiles = files;
+        pendingLabel = label || '';
+        if (!files.length && !label) return;
+        fileName.textContent = label || (files.length > 1 ? (files.length + ' 个文件待发送') : files[0].name);
+        filePreview.classList.remove('hidden');
+        filePreview.classList.add('flex');
+    }
+    function clearPending() {
+        pendingFiles = []; pendingLabel = '';
+        fileInput.value = ''; dirInput.value = '';
+        filePreview.classList.add('hidden');
+        filePreview.classList.remove('flex');
+    }
+    function autoSubmitMobileSelection() {
+        if (!window.matchMedia('(pointer: coarse)').matches) return;
+        setTimeout(function () {
+            document.getElementById('input-bar').requestSubmit();
+        }, 0);
+    }
+    fileCancel.addEventListener('click', clearPending);
+    attachBtn.addEventListener('click', function () { fileInput.click(); });
+    dirBtn.addEventListener('click', function () { dirInput.click(); });
+    fileInput.addEventListener('change', function () {
+        if (!fileInput.files.length) return;
+        setPending(Array.prototype.slice.call(fileInput.files), '');
+        autoSubmitMobileSelection();
+    });
+    dirInput.addEventListener('change', function () {
+        if (!dirInput.files.length) return;
+        var files = Array.prototype.slice.call(dirInput.files);
+        var root = files[0].webkitRelativePath.split('/')[0];
+        setPending(files, '文件夹：' + root + '（' + files.length + ' 项）');
+        autoSubmitMobileSelection();
+    });
+
+    function uploadPending() {
+        if (pendingFiles.length && pendingLabel) {
+            var zip = new JSZip();
+            pendingFiles.forEach(function (f) {
+                var rel = f.webkitRelativePath || f.name;
+                var parts = rel.split('/');
+                parts.shift();
+                var inner = parts.join('/') || f.name;
+                zip.file(inner, f);
+            });
+            var root = pendingFiles[0].webkitRelativePath.split('/')[0];
+            setUploadProgress('正在打包文件夹 · ' + root, 0, 0, false);
+            return zip.generateAsync({ type: 'blob' }).then(function (blob) {
+                return uploadBlobWithProgress(blob, root + '.zip', '正在上传文件夹 · ' + root);
+            }).catch(function (err) {
+                finishUploadProgress(false);
+                throw err;
+            });
+        }
+        if (!pendingFiles.length) return Promise.resolve();
+        return uploadSilently(pendingFiles.map(function (f) { return f; }));
+    }
+
+    document.getElementById('input-bar').addEventListener('submit', function (ev) {
+        ev.preventDefault();
+        sendBtn.disabled = true;
+        var p;
+        if (pendingFiles.length || pendingLabel) {
+            p = uploadPending().then(function () { clearPending(); kickBottom(); return loadAll(); });
+        } else {
+            var text = msg.value.trim();
+            if (!text) { sendBtn.disabled = false; return; }
+            selfGuard = { text: text, ts: Date.now() };
+            p = sendText(text).then(function () { msg.value = ''; autoSize(); kickBottom(); return loadAll(); });
+        }
+        p.catch(function () { alert('发送失败，请重试'); }).then(function () { sendBtn.disabled = false; });
+    });
+
+    msg.addEventListener('keydown', function (e) {
+        if (e.key !== 'Enter') return;
+        if (e.isComposing || e.keyCode === 229) return;
+        if (e.ctrlKey || e.metaKey) {
+            e.preventDefault();
+            var s = msg.selectionStart, t = msg.value, s2 = msg.selectionEnd;
+            msg.value = t.slice(0, s) + '\n' + t.slice(s2);
+            msg.selectionStart = msg.selectionEnd = s + 1;
+            autoSize();
+            return;
+        }
+        if (e.shiftKey) return;
+        e.preventDefault();
+        document.getElementById('input-bar').requestSubmit();
+    });
+
+    msg.addEventListener('paste', function (e) {
+        var cd = e.clipboardData;
+        if (!cd) return;
+        var files = [];
+        if (cd.files && cd.files.length) {
+            files = Array.prototype.slice.call(cd.files);
+        } else if (cd.items) {
+            for (var i = 0; i < cd.items.length; i++) {
+                if (cd.items[i].kind === 'file') {
+                    var f = cd.items[i].getAsFile();
+                    if (f) files.push(f);
+                }
+            }
+        }
+        if (files.length) {
+            e.preventDefault();
+            uploadSilently(files).catch(function () { alert('上传失败'); });
+        }
+    });
+
+    // ---- drag & drop ----
+    var dropOv = document.getElementById('drop-ov');
+    var dragDepth = 0;
+    window.addEventListener('dragenter', function (e) {
+        e.preventDefault();
+        dragDepth++;
+        dropOv.classList.remove('hidden');
+    });
+    window.addEventListener('dragover', function (e) { e.preventDefault(); });
+    window.addEventListener('dragleave', function (e) {
+        dragDepth--;
+        if (dragDepth <= 0) { dragDepth = 0; dropOv.classList.add('hidden'); }
+    });
+    window.addEventListener('drop', function (e) {
+        e.preventDefault();
+        dragDepth = 0;
+        dropOv.classList.add('hidden');
+        handleDrop(e.dataTransfer).catch(function (err) { console.error(err); alert('上传失败'); });
+    });
+
+    function fileFromEntry(entry) {
+        return new Promise(function (res) { entry.file(res, function () { res(null); }); });
+    }
+    function walkEntry(entry, prefix, out) {
+        if (entry.isFile) {
+            return fileFromEntry(entry).then(function (f) {
+                if (f) out.push({ file: f, path: prefix + entry.name });
+            });
+        }
+        if (entry.isDirectory) {
+            var reader = entry.createReader();
+            var loop = function () {
+                return new Promise(function (res) { reader.readEntries(res, function () { res([]); }); }).then(function (batch) {
+                    if (!batch.length) return Promise.resolve();
+                    var seq = Promise.resolve();
+                    batch.forEach(function (en) {
+                        seq = seq.then(function () { return walkEntry(en, prefix + entry.name + '/', out); });
+                    });
+                    return seq.then(loop);
+                });
+            };
+            return loop();
+        }
+        return Promise.resolve();
+    }
+    function handleDrop(dt) {
+        if (!dt) return Promise.resolve();
+        var entries = [];
+        if (dt.items && dt.items.length) {
+            for (var i = 0; i < dt.items.length; i++) {
+                var it = dt.items[i];
+                if (it.kind === 'file' && it.webkitGetAsEntry) {
+                    var en = it.webkitGetAsEntry();
+                    if (en) entries.push(en);
+                }
+            }
+        }
+        if (entries.length) {
+            var plain = entries.filter(function (e) { return e.isFile; });
+            var dirs = entries.filter(function (e) { return e.isDirectory; });
+            var chain = Promise.resolve();
+            plain.forEach(function (en) {
+                chain = chain.then(function () {
+                    return fileFromEntry(en).then(function (f) {
+                        if (f) return uploadSilently([f]);
+                    });
+                });
+            });
+            dirs.forEach(function (en) {
+                chain = chain.then(function () {
+                    var collected = [];
+                    return walkEntry(en, '', collected).then(function () {
+                        if (!collected.length) return;
+                        var zip = new JSZip();
+                        collected.forEach(function (rec) {
+                            var parts = rec.path.split('/');
+                            parts.shift();
+                            zip.file(parts.join('/') || rec.path, rec.file);
+                        });
+                        setUploadProgress('正在打包文件夹 · ' + en.name, 0, 0, false);
+                        return zip.generateAsync({ type: 'blob' }).then(function (blob) {
+                            return uploadBlobWithProgress(blob, en.name + '.zip', '正在上传文件夹 · ' + en.name);
+                        }).catch(function (err) {
+                            finishUploadProgress(false);
+                            throw err;
+                        });
+                    });
+                });
+            });
+            return chain;
+        }
+        var fl = dt.files;
+        if (fl && fl.length) {
+            return uploadSilently(Array.prototype.slice.call(fl));
+        }
+        return Promise.resolve();
+    }
+
+    document.getElementById('logout-btn').addEventListener('click', function () {
+        fetch('/api/logout', { method: 'POST' }).then(function () { location.href = '/login'; });
+    });
+
+
+    fetch('/api/version').then(function (r) { return r.json(); }).then(function (j) {
+        versionTag.textContent = j.version || '';
+    }).catch(function () { versionTag.textContent = ''; });
+
+    var AUTO_REFRESH_SECONDS = 15;
+    var refreshCountdown = AUTO_REFRESH_SECONDS;
+    var refreshBusy = false;
+    function updateRefreshCountdown() {
+        if (refreshCountdownEl) refreshCountdownEl.textContent = String(refreshCountdown);
+        refreshBtn.title = '刷新消息 · ' + refreshCountdown + ' 秒后自动刷新';
+        refreshBtn.setAttribute('aria-label', '刷新消息，' + refreshCountdown + ' 秒后自动刷新');
+    }
+    function resetRefreshCountdown() {
+        refreshCountdown = AUTO_REFRESH_SECONDS;
+        updateRefreshCountdown();
+    }
+    function runRefresh(showSpinner) {
+        if (refreshBusy) return Promise.resolve();
+        refreshBusy = true;
+        refreshBtn.disabled = true;
+        refreshBtn.setAttribute('aria-busy', 'true');
+        var icon = refreshBtn.querySelector('i');
+        if (showSpinner && icon) icon.classList.add('fa-spin');
+        var finish = function () {
+            refreshBusy = false;
+            refreshBtn.disabled = false;
+            refreshBtn.removeAttribute('aria-busy');
+            if (icon) icon.classList.remove('fa-spin');
+        };
+        return loadAll().then(finish, finish);
+    }
+    refreshBtn.addEventListener('click', function () {
+        if (refreshBusy) return;
+        resetRefreshCountdown();
+        runRefresh(true);
+    });
+    updateRefreshCountdown();
+    setInterval(function () {
+        if (document.hidden || refreshBusy) return;
+        refreshCountdown--;
+        if (refreshCountdown <= 0) {
+            resetRefreshCountdown();
+            runRefresh(false);
+            return;
+        }
+        updateRefreshCountdown();
+    }, 1000);
+
+    // ---- auto copy received messages ----
+    var seenTextIds = null;
+    var selfGuard = null;
+    var toastTimer = null;
+    var toastPending = null;
+
+    function legacyCopy(text) {
+        try {
+            var ta = document.createElement('textarea');
+            ta.value = text;
+            ta.style.position = 'fixed';
+            ta.style.left = '-9999px';
+            ta.style.top = '0';
+            ta.setAttribute('readonly', '');
+            document.body.appendChild(ta);
+            ta.select();
+            try { ta.setSelectionRange(0, ta.value.length); } catch (e) {}
+            var ok = document.execCommand('copy');
+            document.body.removeChild(ta);
+            return ok;
+        } catch (e) {
+            return false;
+        }
+    }
+    function copyMessageText(text, button) {
+        var label = button.querySelector('[data-copy-label]');
+        var icon = button.querySelector('i');
+        var finish = function (ok) {
+            if (button._copyResetTimer) clearTimeout(button._copyResetTimer);
+            label.textContent = ok ? '已复制' : '复制失败';
+            icon.className = ok ? 'fas fa-check' : 'fas fa-triangle-exclamation';
+            button.classList.toggle('text-green', ok);
+            button.classList.toggle('text-red', !ok);
+            showCopyToast(ok ? '文本已复制' : '复制失败，请长按文字手动选择', null, ok ? 1600 : 2600);
+            button._copyResetTimer = setTimeout(function () {
+                label.textContent = '复制';
+                icon.className = 'fas fa-copy';
+                button.classList.remove('text-green', 'text-red');
+            }, ok ? 1600 : 2600);
+        };
+        if (window.isSecureContext && navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(text).then(function () {
+                finish(true);
+            }).catch(function () {
+                finish(legacyCopy(text));
+            });
+        } else {
+            finish(legacyCopy(text));
+        }
+    }
+    function previewText(t) { return t.length > 24 ? t.slice(0, 24) + '…' : t; }
+    function showCopyToast(msg, pending, ms) {
+        var el = document.getElementById('copy-toast');
+        var inner = document.getElementById('copy-toast-inner');
+        inner.textContent = msg;
+        toastPending = pending || null;
+        el.classList.remove('hidden');
+        if (toastTimer) { clearTimeout(toastTimer); toastTimer = null; }
+        if (ms > 0) { toastTimer = setTimeout(function () { el.classList.add('hidden'); }, ms); }
+    }
+    function copyLatest(text) {
+        var onOk = function () { showCopyToast('新消息已复制：' + previewText(text), null, 2600); };
+        var onFail = function () {
+            pendingCopyText = text;
+            if (pendingTimer) { clearTimeout(pendingTimer); }
+            pendingTimer = setTimeout(function () {
+                pendingCopyText = null;
+                disarmPendingCopy();
+                var el = document.getElementById('copy-toast');
+                if (el) el.classList.add('hidden');
+            }, 60000);
+            armPendingCopy();
+            showCopyToast('收到新消息：点一下屏幕任意处复制', null, 0);
+        };
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(text).then(onOk).catch(function () {
+                if (legacyCopy(text)) onOk(); else onFail();
+            });
+        } else if (legacyCopy(text)) {
+            onOk();
+        } else {
+            onFail();
+        }
+    }
+    function maybeAutoCopy(e) {
+        if (selfGuard && selfGuard.text === e.Content && (Date.now() - selfGuard.ts) < 20000) {
+            selfGuard = null;
+            return;
+        }
+        copyLatest(e.Content);
+    }
+    var pendingCopyText = null;
+    var pendingTimer = null;
+    var pendingArmed = false;
+    function onAnyGesture() { tryPendingCopy(); }
+    function armPendingCopy() {
+        if (pendingArmed) return;
+        pendingArmed = true;
+        document.addEventListener('pointerdown', onAnyGesture, true);
+        document.addEventListener('touchend', onAnyGesture, true);
+        document.addEventListener('keydown', onAnyGesture, true);
+        window.addEventListener('focus', onAnyGesture);
+        document.addEventListener('visibilitychange', function () {
+            if (!document.hidden) onAnyGesture();
+        });
+    }
+    function disarmPendingCopy() {
+        if (!pendingArmed) return;
+        pendingArmed = false;
+        document.removeEventListener('pointerdown', onAnyGesture, true);
+        document.removeEventListener('touchend', onAnyGesture, true);
+        document.removeEventListener('keydown', onAnyGesture, true);
+        window.removeEventListener('focus', onAnyGesture);
+    }
+    function tryPendingCopy() {
+        if (!pendingCopyText) return;
+        var t = pendingCopyText;
+        var ok = false;
+        try { ok = legacyCopy(t); } catch (e) { ok = false; }
+        if (ok) {
+            pendingCopyText = null;
+            if (pendingTimer) { clearTimeout(pendingTimer); pendingTimer = null; }
+            disarmPendingCopy();
+            showCopyToast('已复制：' + previewText(t), null, 1800);
+        }
+    }
+
+    // ---- search ----
+    var searchQuery = '';
+    var searchBar = document.getElementById('search-bar');
+    document.getElementById('search-btn').addEventListener('click', function () {
+        searchBar.classList.remove('hidden'); searchBar.classList.add('flex');
+        document.getElementById('search-input').focus();
+    });
+    document.getElementById('search-close').addEventListener('click', function () {
+        searchBar.classList.add('hidden'); searchBar.classList.remove('flex');
+        document.getElementById('search-input').value = '';
+        if (searchQuery) { searchQuery = ''; loadAll(); }
+    });
+    document.getElementById('search-input').addEventListener('input', function (e) {
+        searchQuery = e.target.value.trim();
+        loadAll();
+    });
+
+    // ---- left scroll bar ----
+    var sbar = document.getElementById('sbar');
+    var sbarThumb = document.getElementById('sbar-thumb');
+    var sbarDrag = false, sbarStartY = 0, sbarStartTop = 0;
+    function sbarUpdate() {
+        var sh = chat.scrollHeight, ch = chat.clientHeight;
+        if (sh <= ch + 8) { sbar.style.display = 'none'; return; }
+        sbar.style.display = 'block';
+        var trackH = sbar.clientHeight;
+        var thumbH = Math.max(36, Math.round(trackH * ch / sh));
+        sbarThumb.style.height = thumbH + 'px';
+        var maxTop = trackH - thumbH;
+        var ratio = chat.scrollTop / (sh - ch);
+        if (ratio < 0) ratio = 0; if (ratio > 1) ratio = 1;
+        sbarThumb.style.top = Math.round(ratio * maxTop) + 'px';
+    }
+    chat.addEventListener('scroll', sbarUpdate);
+    window.addEventListener('resize', sbarUpdate);
+    sbarThumb.addEventListener('pointerdown', function (e) {
+        sbarDrag = true; sbarStartY = e.clientY; sbarStartTop = chat.scrollTop;
+        try { sbarThumb.setPointerCapture(e.pointerId); } catch (err) {}
+        e.preventDefault();
+    });
+    sbarThumb.addEventListener('pointermove', function (e) {
+        if (!sbarDrag) return;
+        var sh = chat.scrollHeight, ch = chat.clientHeight;
+        var maxTop = sbar.clientHeight - sbarThumb.clientHeight;
+        if (maxTop <= 0) return;
+        var delta = e.clientY - sbarStartY;
+        chat.scrollTop = sbarStartTop + (delta / maxTop) * (sh - ch);
+        e.preventDefault();
+    });
+    sbarThumb.addEventListener('pointerup', function (e) {
+        sbarDrag = false;
+        try { sbarThumb.releasePointerCapture(e.pointerId); } catch (err) {}
+    });
+    sbar.addEventListener('pointerdown', function (e) {
+        if (e.target === sbarThumb) return;
+        var r = sbar.getBoundingClientRect();
+        var ratio = (e.clientY - r.top) / r.height;
+        chat.scrollTop = ratio * (chat.scrollHeight - chat.clientHeight);
+        e.preventDefault();
+    });
+    setTimeout(sbarUpdate, 400);
+
+    autoSize();
+    loadAll();
+    connectSSE();
+</script>
+</body>
+</html>

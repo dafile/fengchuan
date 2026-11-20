@@ -1,0 +1,8 @@
+data/
+release/
+*.exe
+*.zip
+*.log
+_toolchain/
+_*-test/
+.DS_Store

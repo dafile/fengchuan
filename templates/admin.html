@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>管理控制台 · 风传</title>
+    <link rel="stylesheet" href="/static/fontawesome/css/all.min.css">
+    <link href="/static/css/inter.css" rel="stylesheet">
+    <link rel="icon" type="image/x-icon" href="/favicon.ico">
+    
+    <!-- PWA Meta Tags -->
+    <meta name="theme-color" content="#cba6f7"> <!-- mauve:dark -->
+    <link rel="manifest" href="/manifest.json">
+    <link rel="apple-touch-icon" href="/icon-192.png">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="ContentShare">
+    <meta name="format-detection" content="telephone=no">
+
+    <style>
+        :root { /* Catppuccin Latte (Light Theme) */
+            --rosewater: #dc8a78; --flamingo: #dd7878; --pink: #ea76cb;
+            --mauve: #8839ef; --red: #d20f39; --maroon: #e64553;
+            --peach: #fe640b; --yellow: #df8e1d; --green: #40a02b;
+            --teal: #179299; --sky: #04a5e5; --sapphire: #209fb5;
+            --blue: #1e66f5; --lavender: #7287fd; --text: #4c4f69;
+            --subtext1: #5c5f77; --subtext0: #6c6f85; --overlay2: #7c7f93;
+            --overlay1: #767b8d; --overlay0: #9ca0b0; --surface2: #acb0be;
+            --surface1: #aab1c0; --surface0: #ccd0da; --base: #eff1f5;
+            --mantle: #e6e9ef; --crust: #d3d8e1;
+        }
+
+        html.dark { /* Catppuccin Mocha (Dark Theme) */
+            --rosewater: #f5e0dc; --flamingo: #f2cdcd; --pink: #f5c2e7;
+            --mauve: #cba6f7; --red: #f38ba8; --maroon: #eba0ac;
+            --peach: #fab387; --yellow: #f9e2af; --green: #a6e3a1;
+            --teal: #94e2d5; --sky: #89dceb; --sapphire: #74c7ec;
+            --blue: #89b4fa; --lavender: #b4befe; --text: #cdd6f4;
+            --subtext1: #bac2de; --subtext0: #a6adc8; --overlay2: #9399b2;
+            --overlay1: #7f849c; --overlay0: #6c7086; --surface2: #585b70;
+            --surface1: #45475a; --surface0: #313244; --base: #1e1e2e;
+            --mantle: #181825; --crust: #11111b;
+        }
+    </style>
+    <script>
+        (function() {
+            function sysDark() {
+                return window.matchMedia('(prefers-color-scheme: dark)').matches;
+            }
+            var t = null;
+            try { t = localStorage.getItem('lc_theme'); } catch (e) {}
+            var dark = t === 'dark' || (!t && sysDark());
+            if (dark) { document.documentElement.classList.add('dark'); }
+            else { document.documentElement.classList.remove('dark'); }
+        })();
+    </script>
+    <script src="/static/js/tailwindcss.js"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    borderRadius: {
+                        '4xl': '2rem',
+                    },
+                    colors: {
+                        'rosewater': 'var(--rosewater)', 'flamingo': 'var(--flamingo)',
+                        'pink': 'var(--pink)', 'mauve': 'var(--mauve)',
+                        'red': 'var(--red)', 'maroon': 'var(--maroon)',
+                        'peach': 'var(--peach)', 'yellow': 'var(--yellow)',
+                        'green': 'var(--green)', 'teal': 'var(--teal)',
+                        'sky': 'var(--sky)', 'sapphire': 'var(--sapphire)',
+                        'blue': 'var(--blue)', 'lavender': 'var(--lavender)',
+                        'text': 'var(--text)', 'subtext1': 'var(--subtext1)',
+                        'subtext0': 'var(--subtext0)', 'overlay2': 'var(--overlay2)',
+                        'overlay1': 'var(--overlay1)', 'overlay0': 'var(--overlay0)',
+                        'surface2': 'var(--surface2)', 'surface1': 'var(--surface1)',
+                        'surface0': 'var(--surface0)', 'base': 'var(--base)',
+                        'mantle': 'var(--mantle)', 'crust': 'var(--crust)',
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+    </style>
+</head>
+<style>
+    .card { background: var(--base); border: 1px solid var(--surface0); border-radius: 16px; }
+    .btn { border-radius: 10px; padding: 7px 14px; font-size: 13px; cursor: pointer; border: none; transition: opacity .15s; }
+    .btn:hover { opacity: .85; }
+    .badge { display: inline-block; font-size: 11px; padding: 2px 9px; border-radius: 999px; font-weight: 500; }
+    .badge-text { background: rgba(136,57,239,.12); color: var(--mauve); }
+    .badge-file { background: rgba(30,102,245,.12); color: var(--blue); }
+    .badge-link { background: rgba(64,160,43,.14); color: var(--green); }
+    tr.row:hover { background: rgba(127,127,127,.07); }
+    .mono { font-variant-numeric: tabular-nums; }
+    .seg button { border: 1px solid var(--surface1); background: transparent; color: var(--subtext0); padding: 5px 14px; font-size: 12px; cursor: pointer; }
+    .seg button:first-child { border-radius: 9px 0 0 9px; }
+    .seg button:last-child { border-radius: 0 9px 9px 0; }
+    .seg button + button { border-left: none; }
+    .seg button.active { background: var(--blue); color: var(--crust); border-color: var(--blue); }
+    .td-content { max-width: 380px; }
+    .td-content .ellip { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .md-body { font-size: 13px; line-height: 1.6; }
+    .md-body h1 { font-size: 17px; font-weight: 700; margin: 4px 0 8px; color: var(--mauve); }
+    .md-body h2 { font-size: 15px; font-weight: 700; margin: 14px 0 6px; color: var(--mauve); }
+    .md-body h3 { font-size: 14px; font-weight: 600; margin: 10px 0 4px; }
+    .md-body ul { list-style: disc; padding-left: 20px; margin: 4px 0; }
+    .md-body li { margin: 2px 0; }
+    .md-body code { background: var(--surface0); border-radius: 4px; padding: 1px 5px; font-size: 12px; }
+    .md-body pre { background: var(--surface0); border-radius: 8px; padding: 8px 10px; overflow: auto; }
+    .md-body pre code { background: none; padding: 0; }
+    .md-body blockquote { border-left: 3px solid var(--mauve); padding-left: 10px; margin: 6px 0; color: var(--subtext0); }
+    .md-body hr { border: none; border-top: 1px solid var(--surface1); margin: 12px 0; }
+    .md-body a { color: var(--blue); text-decoration: underline; }
+    .md-body p { margin: 4px 0; }
+</style>
+
+<body class="bg-crust text-text antialiased">
+<div class="max-w-6xl mx-auto p-4 md:p-8">
+    <header class="flex items-center justify-between mb-7">
+        <div class="flex items-center gap-3">
+            <div class="w-10 h-10 rounded-2xl bg-surface0 flex items-center justify-center">
+                <i class="fas fa-sliders text-mauve"></i>
+            </div>
+            <div>
+                <h1 class="text-2xl font-bold text-mauve leading-tight">管理控制台</h1>
+                <div class="text-[11px] text-overlay1">风传 <span id="ver"></span></div>
+            </div>
+        </div>
+        <div class="flex items-center gap-2">
+            <button id="theme-btn" class="btn w-9 h-9 !p-0 rounded-xl bg-surface0 text-overlay1" title="切换主题"><i class="fas fa-circle-half-stroke"></i></button>
+            <button id="refresh" class="btn bg-surface0 text-subtext0">刷新</button>
+            <button id="cl-btn" class="btn bg-surface0 text-subtext0">更新日志</button>
+            <a href="/access-log" class="btn bg-surface0 text-subtext0 no-underline inline-block">访问记录</a>
+            <a href="/" class="btn bg-surface0 text-subtext0 no-underline inline-block">返回消息页</a>
+            <button id="logout" class="btn bg-red text-white">退出登录</button>
+        </div>
+    </header>
+
+    <section class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+        <div class="card p-4 flex items-center gap-3">
+            <div class="w-9 h-9 rounded-xl bg-surface0 flex items-center justify-center flex-none"><i class="fas fa-message text-mauve text-sm"></i></div>
+            <div><div class="text-[11px] text-overlay1">文本消息</div><div class="text-xl font-semibold text-mauve leading-tight" id="st-text">0</div></div>
+        </div>
+        <div class="card p-4 flex items-center gap-3">
+            <div class="w-9 h-9 rounded-xl bg-surface0 flex items-center justify-center flex-none"><i class="fas fa-folder text-blue text-sm"></i></div>
+            <div><div class="text-[11px] text-overlay1">文件</div><div class="text-xl font-semibold text-blue leading-tight" id="st-file">0</div></div>
+        </div>
+        <div class="card p-4 flex items-center gap-3">
+            <div class="w-9 h-9 rounded-xl bg-surface0 flex items-center justify-center flex-none"><i class="fas fa-link text-green text-sm"></i></div>
+            <div><div class="text-[11px] text-overlay1">链接</div><div class="text-xl font-semibold text-green leading-tight" id="st-link">0</div></div>
+        </div>
+        <div class="card p-4 flex items-center gap-3">
+            <div class="w-9 h-9 rounded-xl bg-surface0 flex items-center justify-center flex-none"><i class="fas fa-database text-peach text-sm"></i></div>
+            <div><div class="text-[11px] text-overlay1">占用空间</div><div class="text-xl font-semibold text-peach leading-tight" id="st-size">0</div></div>
+        </div>
+    </section>
+
+    <section class="card p-4 mb-6 flex flex-wrap items-center gap-4">
+        <div class="flex items-center gap-3">
+            <span class="text-sm text-subtext0">默认主题</span>
+            <div class="seg" id="theme-seg">
+                <button data-theme="auto">跟随系统</button>
+                <button data-theme="light">亮色</button>
+                <button data-theme="dark">暗色</button>
+            </div>
+        </div>
+        <span class="text-[11px] text-overlay1">新访客默认使用；用户可在消息页自行切换</span>
+        <div class="flex items-center gap-3 md:ml-8">
+            <span class="text-sm text-subtext0">会话过期</span>
+            <input id="ttl-input" type="text" placeholder="10m" class="bg-surface0 rounded-lg px-3 py-1.5 text-sm w-24 focus:outline-none focus:ring-1 focus:ring-mauve" />
+            <button id="ttl-save" class="btn bg-surface1 text-text">保存</button>
+        </div>
+        <span class="text-xs text-overlay1 ml-auto" id="tip"></span>
+    </section>
+
+    <section class="flex flex-wrap items-center gap-2 mb-4">
+        <button id="btn-clear" class="btn bg-red text-white">清空全部</button>
+        <button id="btn-export" class="btn bg-blue text-crust">导出文本记录</button>
+        <button id="btn-zipall" class="btn bg-surface1 text-text">打包下载全部</button>
+    </section>
+
+    <section class="card overflow-hidden">
+        <div class="overflow-auto max-h-[60vh]">
+            <table class="w-full text-sm">
+                <thead class="text-overlay1 text-xs sticky top-0 bg-base z-10">
+                    <tr class="border-b border-surface0">
+                        <th class="text-left px-4 py-2.5 w-24">类型</th>
+                        <th class="text-left px-4 py-2.5">名称 / 内容</th>
+                        <th class="text-left px-4 py-2.5 w-44">来源</th>
+                        <th class="text-left px-4 py-2.5 w-44">时间</th>
+                        <th class="text-right px-4 py-2.5 w-20">操作</th>
+                    </tr>
+                </thead>
+                <tbody id="rows"></tbody>
+            </table>
+        </div>
+    </section>
+
+</div>
+
+<div id="cl-modal" class="hidden fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
+    <div class="bg-crust rounded-2xl w-full max-w-2xl max-h-[80vh] flex flex-col p-5">
+        <div class="flex items-center justify-between mb-3">
+            <h2 class="text-lg font-semibold text-mauve">更新日志</h2>
+            <span id="cl-close" class="text-overlay1 hover:text-red cursor-pointer">关闭</span>
+        </div>
+        <div id="cl-body" class="md-body flex-1 overflow-auto bg-base rounded-xl p-4"></div>
+    </div>
+</div>
+
+<script src="/static/js/marked.min.js"></script>
+<script>
+    var rows = document.getElementById('rows');
+    var cache = [];
+
+    function toLogin() { location.href = '/login'; }
+    function guarded(u, opt) {
+        return fetch(u, opt).then(function (r) {
+            if (r.status === 401) { toLogin(); throw new Error('401'); }
+            return r;
+        });
+    }
+
+    function fmtSize(n) {
+        if (n < 1024) return n + ' B';
+        if (n < 1048576) return (n / 1024).toFixed(1) + ' KB';
+        return (n / 1048576).toFixed(1) + ' MB';
+    }
+    function fmtTime(ts) {
+        if (!ts) return '-';
+        var d = new Date(ts * 1000);
+        var p = function (x) { return x < 10 ? '0' + x : x; };
+        return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds());
+    }
+    function esc(s) {
+        return String(s).replace(/[&<>"']/g, function (c) {
+            return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+        });
+    }
+
+    function loadStats() {
+        guarded('/api/stats').then(function (r) { return r.json(); }).then(function (s) {
+            document.getElementById('st-text').textContent = s.text;
+            document.getElementById('st-file').textContent = s.file;
+            document.getElementById('st-link').textContent = s.link;
+            document.getElementById('st-size').textContent = fmtSize(s.totalSize || 0);
+        }).catch(function () {});
+    }
+
+    function loadList() {
+        guarded('/api/entries').then(function (r) { return r.json(); }).then(function (list) {
+            cache = list;
+            rows.innerHTML = '';
+            if (!list.length) {
+                rows.innerHTML = '<tr><td colspan="5" class="text-center text-overlay1 py-10">' +
+                    '<i class="fas fa-inbox text-2xl block mb-2"></i>暂无记录</td></tr>';
+                return;
+            }
+            list.forEach(function (e) {
+                var tr = document.createElement('tr');
+                tr.className = 'row border-b border-surface0';
+                var badge = e.Type === 'text' ? '<span class="badge badge-text">文本</span>'
+                    : (e.Type === 'file' ? '<span class="badge badge-file">文件</span>'
+                    : '<span class="badge badge-link">链接</span>');
+                var text = e.Type === 'text' ? e.Content : e.Filename;
+                var shown = text.length > 80 ? text.slice(0, 80) + '…' : text;
+                var from = '<span class="mono">' + esc(e.From || '-') + '</span>' +
+                    (e.Sender ? ' <span class="text-overlay1">（' + esc(e.Sender) + '）</span>' : '');
+                tr.innerHTML =
+                    '<td class="px-4 py-2.5">' + badge + '</td>' +
+                    '<td class="px-4 py-2.5 td-content"><div class="ellip" title="' + esc(text) + '">' + esc(shown) + '</div></td>' +
+                    '<td class="px-4 py-2.5 text-xs">' + from + '</td>' +
+                    '<td class="px-4 py-2.5 text-xs text-overlay1 mono">' + fmtTime(e.Ts) + '</td>' +
+                    '<td class="px-4 py-2.5 text-right"></td>';
+                var del = document.createElement('button');
+                del.className = 'text-xs text-overlay1 hover:text-red transition-colors';
+                del.textContent = '删除';
+                del.addEventListener('click', function () {
+                    if (!confirm('删除这条记录？')) return;
+                    guarded('/delete/' + encodeURI(e.ID), { method: 'POST' }).then(function () { loadAll(); });
+                });
+                tr.lastChild.appendChild(del);
+                rows.appendChild(tr);
+            });
+        }).catch(function () {});
+    }
+
+    function loadAll() { loadStats(); loadList(); }
+
+    document.getElementById('refresh').addEventListener('click', function () {
+        loadAll();
+        document.getElementById('tip').textContent = '已刷新 ' + new Date().toLocaleTimeString();
+    });
+
+    document.getElementById('logout').addEventListener('click', function () {
+        fetch('/api/logout', { method: 'POST' }).then(function () { toLogin(); });
+    });
+
+    document.getElementById('btn-clear').addEventListener('click', function () {
+        if (!confirm('确认清空全部记录？此操作不可恢复！')) return;
+        var chain = Promise.resolve();
+        cache.forEach(function (e) {
+            chain = chain.then(function () { return guarded('/delete/' + encodeURI(e.ID), { method: 'POST' }); });
+        });
+        chain.then(function () { loadAll(); document.getElementById('tip').textContent = '已清空'; });
+    });
+
+    document.getElementById('btn-export').addEventListener('click', function () {
+        var lines = [];
+        cache.forEach(function (e) {
+            if (e.Type !== 'text') return;
+            lines.push('[' + fmtTime(e.Ts) + '] ' + (e.Sender ? '<' + e.Sender + '> ' : '') + (e.From || '') + ' :: ' + e.Content);
+        });
+        var blob = new Blob([lines.join('\n')], { type: 'text/plain;charset=utf-8' });
+        var a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = 'lanchat-text-' + Date.now() + '.txt';
+        a.click();
+        URL.revokeObjectURL(a.href);
+    });
+
+    document.getElementById('btn-zipall').addEventListener('click', function () {
+        var ids = cache.map(function (e) { return e.ID; });
+        if (!ids.length) { alert('没有可打包的内容'); return; }
+        document.getElementById('tip').textContent = '打包中…';
+        guarded('/api/batch-download', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(ids)
+        }).then(function (r) { return r.blob(); }).then(function (b) {
+            var a = document.createElement('a');
+            a.href = URL.createObjectURL(b);
+            a.download = 'lanchat-all-' + Date.now() + '.zip';
+            a.click();
+            URL.revokeObjectURL(a.href);
+            document.getElementById('tip').textContent = '已打包';
+        }).catch(function () {});
+    });
+
+    // ---- theme (same as main page) ----
+    var prefersDark = window.matchMedia('(prefers-color-scheme: dark)');
+    var serverDefaultTheme = 'auto';
+    function userTheme() { try { return localStorage.getItem('lc_theme'); } catch (e) { return null; } }
+    function setUserTheme(t) {
+        try { if (t) localStorage.setItem('lc_theme', t); else localStorage.removeItem('lc_theme'); } catch (e) {}
+    }
+    function applyThemeAttr(t) {
+        if (t === 'dark') document.documentElement.classList.add('dark');
+        else document.documentElement.classList.remove('dark');
+    }
+    function effectiveTheme() {
+        var u = userTheme();
+        var base = u || serverDefaultTheme;
+        if (base === 'auto') return prefersDark.matches ? 'dark' : 'light';
+        return base;
+    }
+    function refreshTheme() {
+        applyThemeAttr(effectiveTheme());
+        var u = userTheme();
+        var icon = u === 'dark' ? 'fa-moon' : (u === 'light' ? 'fa-sun' : 'fa-circle-half-stroke');
+        document.getElementById('theme-btn').innerHTML = '<i class="fas ' + icon + '"></i>';
+    }
+    document.getElementById('theme-btn').addEventListener('click', function () {
+        var u = userTheme() || 'auto';
+        var next = u === 'auto' ? 'light' : (u === 'light' ? 'dark' : 'auto');
+        setUserTheme(next === 'auto' ? null : next);
+        refreshTheme();
+    });
+    prefersDark.addEventListener('change', refreshTheme);
+
+    function markSeg(theme) {
+        document.querySelectorAll('#theme-seg button').forEach(function (b) {
+            b.classList.toggle('active', b.getAttribute('data-theme') === theme);
+        });
+    }
+    document.querySelectorAll('#theme-seg button').forEach(function (b) {
+        b.addEventListener('click', function () {
+            var t = b.getAttribute('data-theme');
+            guarded('/api/settings', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ defaultTheme: t })
+            }).then(function () {
+                serverDefaultTheme = t;
+                markSeg(t);
+                refreshTheme();
+                document.getElementById('tip').textContent = '默认主题已保存';
+            }).catch(function () {});
+        });
+    });
+
+    guarded('/api/version').then(function (r) { return r.json(); }).then(function (j) {
+        document.getElementById('ver').textContent = j.version || '';
+    }).catch(function () {});
+    guarded('/api/settings').then(function (r) { return r.json(); }).then(function (s) {
+        serverDefaultTheme = s.defaultTheme || 'auto';
+        markSeg(serverDefaultTheme);
+        refreshTheme();
+        document.getElementById('ttl-input').value = s.sessionTTL || '';
+    }).catch(function () {});
+
+    document.getElementById('ttl-save').addEventListener('click', function () {
+        var v = document.getElementById('ttl-input').value.trim();
+        if (!v) { document.getElementById('tip').textContent = '请输入如 10m / 30m / 1h'; return; }
+        guarded('/api/settings', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ sessionTTL: v })
+        }).then(function (r) {
+            if (r.status === 400) { document.getElementById('tip').textContent = '格式无效：如 10m / 1h / 30（分钟）'; return; }
+            document.getElementById('tip').textContent = '会话过期时间已保存（对新登录生效）';
+        }).catch(function () {});
+    });
+    document.getElementById('cl-btn').addEventListener('click', function () {
+        fetch('/api/changelog').then(function (r) { return r.text(); }).then(function (t) {
+            var body = document.getElementById('cl-body');
+            if (window.marked) { body.innerHTML = marked.parse(t); } else { body.textContent = t; }
+            document.getElementById('cl-modal').classList.remove('hidden');
+        }).catch(function () {});
+    });
+    document.getElementById('cl-close').addEventListener('click', function () {
+        document.getElementById('cl-modal').classList.add('hidden');
+    });
+    document.getElementById('cl-modal').addEventListener('click', function (e) {
+        if (e.target === document.getElementById('cl-modal')) document.getElementById('cl-modal').classList.add('hidden');
+    });
+    refreshTheme();
+    loadAll();
+</script>
+</body>
+</html>

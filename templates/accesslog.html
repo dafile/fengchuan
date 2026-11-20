@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>访问记录 · 风传</title>
+    <link rel="stylesheet" href="/static/fontawesome/css/all.min.css">
+    <link href="/static/css/inter.css" rel="stylesheet">
+    <link rel="icon" type="image/x-icon" href="/favicon.ico">
+    
+    <!-- PWA Meta Tags -->
+    <meta name="theme-color" content="#cba6f7"> <!-- mauve:dark -->
+    <link rel="manifest" href="/manifest.json">
+    <link rel="apple-touch-icon" href="/icon-192.png">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="ContentShare">
+    <meta name="format-detection" content="telephone=no">
+
+    <style>
+        :root { /* Catppuccin Latte (Light Theme) */
+            --rosewater: #dc8a78; --flamingo: #dd7878; --pink: #ea76cb;
+            --mauve: #8839ef; --red: #d20f39; --maroon: #e64553;
+            --peach: #fe640b; --yellow: #df8e1d; --green: #40a02b;
+            --teal: #179299; --sky: #04a5e5; --sapphire: #209fb5;
+            --blue: #1e66f5; --lavender: #7287fd; --text: #4c4f69;
+            --subtext1: #5c5f77; --subtext0: #6c6f85; --overlay2: #7c7f93;
+            --overlay1: #767b8d; --overlay0: #9ca0b0; --surface2: #acb0be;
+            --surface1: #aab1c0; --surface0: #ccd0da; --base: #eff1f5;
+            --mantle: #e6e9ef; --crust: #d3d8e1;
+        }
+
+        html.dark { /* Catppuccin Mocha (Dark Theme) */
+            --rosewater: #f5e0dc; --flamingo: #f2cdcd; --pink: #f5c2e7;
+            --mauve: #cba6f7; --red: #f38ba8; --maroon: #eba0ac;
+            --peach: #fab387; --yellow: #f9e2af; --green: #a6e3a1;
+            --teal: #94e2d5; --sky: #89dceb; --sapphire: #74c7ec;
+            --blue: #89b4fa; --lavender: #b4befe; --text: #cdd6f4;
+            --subtext1: #bac2de; --subtext0: #a6adc8; --overlay2: #9399b2;
+            --overlay1: #7f849c; --overlay0: #6c7086; --surface2: #585b70;
+            --surface1: #45475a; --surface0: #313244; --base: #1e1e2e;
+            --mantle: #181825; --crust: #11111b;
+        }
+    </style>
+    <script>
+        (function() {
+            function sysDark() {
+                return window.matchMedia('(prefers-color-scheme: dark)').matches;
+            }
+            var t = null;
+            try { t = localStorage.getItem('lc_theme'); } catch (e) {}
+            var dark = t === 'dark' || (!t && sysDark());
+            if (dark) { document.documentElement.classList.add('dark'); }
+            else { document.documentElement.classList.remove('dark'); }
+        })();
+    </script>
+    <script src="/static/js/tailwindcss.js"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    borderRadius: {
+                        '4xl': '2rem',
+                    },
+                    colors: {
+                        'rosewater': 'var(--rosewater)', 'flamingo': 'var(--flamingo)',
+                        'pink': 'var(--pink)', 'mauve': 'var(--mauve)',
+                        'red': 'var(--red)', 'maroon': 'var(--maroon)',
+                        'peach': 'var(--peach)', 'yellow': 'var(--yellow)',
+                        'green': 'var(--green)', 'teal': 'var(--teal)',
+                        'sky': 'var(--sky)', 'sapphire': 'var(--sapphire)',
+                        'blue': 'var(--blue)', 'lavender': 'var(--lavender)',
+                        'text': 'var(--text)', 'subtext1': 'var(--subtext1)',
+                        'subtext0': 'var(--subtext0)', 'overlay2': 'var(--overlay2)',
+                        'overlay1': 'var(--overlay1)', 'overlay0': 'var(--overlay0)',
+                        'surface2': 'var(--surface2)', 'surface1': 'var(--surface1)',
+                        'surface0': 'var(--surface0)', 'base': 'var(--base)',
+                        'mantle': 'var(--mantle)', 'crust': 'var(--crust)',
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+    </style>
+</head>
+<style>
+    .card { background: var(--base); border: 1px solid var(--surface0); border-radius: 16px; }
+    .btn { border-radius: 10px; padding: 7px 14px; font-size: 13px; cursor: pointer; border: none; transition: opacity .15s; }
+    .btn:hover { opacity: .85; }
+    tr.row:hover { background: rgba(127,127,127,.07); }
+    .mono { font-variant-numeric: tabular-nums; }
+    .fld { background: var(--surface0); border-radius: 9px; padding: 7px 10px; font-size: 13px; color: var(--text); border: 1px solid transparent; outline: none; }
+    .fld:focus { border-color: var(--mauve); }
+    .flabel { font-size: 11px; color: var(--overlay1); display: block; margin-bottom: 4px; }
+    .td-content { max-width: 420px; }
+    .td-content .ellip { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    input[type="date"].fld { color-scheme: light dark; }
+</style>
+
+<body class="bg-crust text-text antialiased">
+<div class="max-w-6xl mx-auto p-4 md:p-8">
+    <header class="flex items-center justify-between mb-6 flex-wrap gap-3">
+        <div class="flex items-center gap-3">
+            <div class="w-10 h-10 rounded-2xl bg-surface0 flex items-center justify-center">
+                <i class="fas fa-clipboard-list text-mauve"></i>
+            </div>
+            <div>
+                <h1 class="text-2xl font-bold text-mauve leading-tight">访问记录</h1>
+                <div class="text-[11px] text-overlay1">风传 · 记录永久保存在本机</div>
+            </div>
+        </div>
+        <div class="flex items-center gap-2 flex-wrap">
+            <button id="theme-btn" class="btn w-9 h-9 !p-0 rounded-xl bg-surface0 text-overlay1" title="切换主题"><i class="fas fa-circle-half-stroke"></i></button>
+            <a href="/admin" class="btn bg-surface0 text-subtext0 no-underline inline-block">返回管理页</a>
+            <a href="/" class="btn bg-surface0 text-subtext0 no-underline inline-block">返回消息页</a>
+            <button id="logout" class="btn bg-red text-white">退出登录</button>
+        </div>
+    </header>
+
+    <section class="card p-4 mb-4">
+        <div class="flex flex-wrap items-end gap-4">
+            <div>
+                <span class="flabel">日期</span>
+                <input id="f-date" type="date" class="fld">
+            </div>
+            <div>
+                <span class="flabel">事件类型</span>
+                <select id="f-event" class="fld">
+                    <option value="">全部事件</option>
+                    <option>登录成功</option>
+                    <option>登录失败</option>
+                    <option>退出登录</option>
+                    <option>打开登录页</option>
+                    <option>访问主页</option>
+                    <option>访问管理页</option>
+                    <option>访问记录页</option>
+                    <option>发消息</option>
+                    <option>发链接</option>
+                    <option>上传文件</option>
+                    <option>查看/下载</option>
+                    <option>批量下载</option>
+                    <option>删除</option>
+                </select>
+            </div>
+            <div>
+                <span class="flabel">来源 IP</span>
+                <input id="f-ip" type="text" class="fld w-40" placeholder="如 172.20.">
+            </div>
+            <div class="flex-1 min-w-[180px]">
+                <span class="flabel">关键词（内容 / 文件名 / 昵称 / IP）</span>
+                <input id="f-q" type="text" class="fld w-full" placeholder="输入关键词">
+            </div>
+            <div class="flex items-center gap-2">
+                <button id="f-apply" class="btn bg-blue text-crust">查询</button>
+                <button id="f-reset" class="btn bg-surface1 text-text">清空筛选</button>
+            </div>
+        </div>
+    </section>
+
+    <section class="card overflow-hidden">
+        <div class="flex items-center justify-between px-4 py-3 border-b border-surface0 flex-wrap gap-2">
+            <span class="text-sm text-subtext0" id="summary">加载中…</span>
+            <button id="clear-log" class="btn bg-surface1 text-text">清空全部记录</button>
+        </div>
+        <div class="overflow-auto max-h-[60vh]">
+            <table class="w-full text-sm">
+                <thead class="text-overlay1 text-xs sticky top-0 bg-base z-10">
+                    <tr class="border-b border-surface0">
+                        <th class="text-left px-4 py-2.5 w-44">时间</th>
+                        <th class="text-left px-4 py-2.5 w-40">来源 IP</th>
+                        <th class="text-left px-4 py-2.5 w-28">事件</th>
+                        <th class="text-left px-4 py-2.5">详情</th>
+                    </tr>
+                </thead>
+                <tbody id="rows"></tbody>
+            </table>
+        </div>
+        <div class="text-center py-3 border-t border-surface0">
+            <button id="more" class="btn bg-surface1 text-text" style="display:none">加载更多</button>
+        </div>
+    </section>
+</div>
+
+<script>
+    var PAGE = 200;
+    var state = { offset: 0, total: 0 };
+
+    function toLogin() { location.href = '/login'; }
+    function guarded(u, opt) {
+        return fetch(u, opt).then(function (r) {
+            if (r.status === 401) { toLogin(); throw new Error('401'); }
+            return r;
+        });
+    }
+    function esc(s) {
+        return String(s).replace(/[&<>"']/g, function (c) {
+            return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+        });
+    }
+    function fmtTime(ts) {
+        if (!ts) return '-';
+        var d = new Date(ts * 1000);
+        var p = function (x) { return x < 10 ? '0' + x : x; };
+        return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds());
+    }
+
+    function buildQuery() {
+        var p = [];
+        var d = document.getElementById('f-date').value;
+        if (d) p.push('date=' + encodeURIComponent(d));
+        var ev = document.getElementById('f-event').value;
+        if (ev) p.push('event=' + encodeURIComponent(ev));
+        var ip = document.getElementById('f-ip').value.trim();
+        if (ip) p.push('ip=' + encodeURIComponent(ip));
+        var q = document.getElementById('f-q').value.trim();
+        if (q) p.push('q=' + encodeURIComponent(q));
+        return p.join('&');
+    }
+
+    function load(append) {
+        if (!append) state.offset = 0;
+        var url = '/api/access-log?offset=' + state.offset + '&limit=' + PAGE;
+        var qs = buildQuery();
+        if (qs) url += '&' + qs;
+        guarded(url).then(function (r) { return r.json(); }).then(function (data) {
+            state.total = data.total;
+            var rows = document.getElementById('rows');
+            if (!append) rows.innerHTML = '';
+            var records = data.records || [];
+            if (!records.length && !append) {
+                rows.innerHTML = '<tr><td colspan="4" class="text-center text-overlay1 py-10">没有匹配的记录</td></tr>';
+            }
+            records.forEach(function (rec) {
+                var tr = document.createElement('tr');
+                tr.className = 'row border-b border-surface0';
+                tr.innerHTML =
+                    '<td class="px-4 py-2 text-xs text-overlay1 mono">' + fmtTime(rec.ts) + '</td>' +
+                    '<td class="px-4 py-2 text-xs mono">' + esc(rec.ip || '-') + '</td>' +
+                    '<td class="px-4 py-2 text-xs">' + esc(rec.event || '-') + '</td>' +
+                    '<td class="px-4 py-2 text-xs td-content"><div class="ellip" title="' + esc(rec.detail || '') + '">' + esc(rec.detail || '-') + '</div></td>';
+                rows.appendChild(tr);
+            });
+            state.offset += records.length;
+            document.getElementById('summary').textContent = '共 ' + state.total + ' 条记录，已显示 ' + state.offset + ' 条（永久保存）';
+            document.getElementById('more').style.display = (state.offset < state.total) ? '' : 'none';
+        }).catch(function () {});
+    }
+
+    document.getElementById('f-apply').addEventListener('click', function () { load(false); });
+    document.getElementById('f-reset').addEventListener('click', function () {
+        document.getElementById('f-date').value = '';
+        document.getElementById('f-event').value = '';
+        document.getElementById('f-ip').value = '';
+        document.getElementById('f-q').value = '';
+        load(false);
+    });
+    ['f-ip', 'f-q'].forEach(function (id) {
+        document.getElementById(id).addEventListener('keydown', function (e) {
+            if (e.key === 'Enter') load(false);
+        });
+    });
+    document.getElementById('more').addEventListener('click', function () { load(true); });
+    document.getElementById('clear-log').addEventListener('click', function () {
+        if (!confirm('确定清空全部访问记录？此操作不可恢复！')) return;
+        guarded('/api/access-log-clear', { method: 'POST' }).then(function () { load(false); }).catch(function () {});
+    });
+    document.getElementById('logout').addEventListener('click', function () {
+        fetch('/api/logout', { method: 'POST' }).then(function () { toLogin(); });
+    });
+
+    // theme (same logic as other pages)
+    var prefersDark = window.matchMedia('(prefers-color-scheme: dark)');
+    var serverDefaultTheme = 'auto';
+    function userTheme() { try { return localStorage.getItem('lc_theme'); } catch (e) { return null; } }
+    function setUserTheme(t) {
+        try { if (t) localStorage.setItem('lc_theme', t); else localStorage.removeItem('lc_theme'); } catch (e) {}
+    }
+    function applyThemeAttr(t) {
+        if (t === 'dark') document.documentElement.classList.add('dark');
+        else document.documentElement.classList.remove('dark');
+    }
+    function effectiveTheme() {
+        var u = userTheme();
+        var base = u || serverDefaultTheme;
+        if (base === 'auto') return prefersDark.matches ? 'dark' : 'light';
+        return base;
+    }
+    function refreshTheme() {
+        applyThemeAttr(effectiveTheme());
+        var u = userTheme();
+        var icon = u === 'dark' ? 'fa-moon' : (u === 'light' ? 'fa-sun' : 'fa-circle-half-stroke');
+        document.getElementById('theme-btn').innerHTML = '<i class="fas ' + icon + '"></i>';
+    }
+    document.getElementById('theme-btn').addEventListener('click', function () {
+        var u = userTheme() || 'auto';
+        var next = u === 'auto' ? 'light' : (u === 'light' ? 'dark' : 'auto');
+        setUserTheme(next === 'auto' ? null : next);
+        refreshTheme();
+    });
+    guarded('/api/settings').then(function (r) { return r.json(); }).then(function (s) {
+        serverDefaultTheme = s.defaultTheme || 'auto';
+        refreshTheme();
+    }).catch(function () {});
+    refreshTheme();
+
+    load(false);
+</script>
+</body>
+</html>

@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>登录 · 风传</title>
+    <link rel="icon" type="image/x-icon" href="/favicon.ico">
+    <style>
+        :root { --bg:#eff1f5; --card:#ffffff; --text:#4c4f69; --sub:#6c6f85; --accent:#8839ef; --border:#ccd0da; --input:#e6e9ef; --err:#d20f39; }
+        html.dark { --bg:#1e1e2e; --card:#181825; --text:#cdd6f4; --sub:#a6adc8; --accent:#cba6f7; --border:#313244; --input:#313244; --err:#f38ba8; }
+        * { box-sizing: border-box; }
+        body { margin:0; height:100vh; display:flex; align-items:center; justify-content:center; background:var(--bg); color:var(--text); font-family:system-ui,-apple-system,'Segoe UI','Microsoft YaHei',sans-serif; }
+        .card { background:var(--card); border:1px solid var(--border); border-radius:18px; padding:30px 28px; width:330px; max-width:90vw; box-shadow:0 8px 30px rgba(0,0,0,.08); }
+        h1 { font-size:19px; margin:0 0 6px; color:var(--accent); }
+        p { font-size:12px; color:var(--sub); margin:0 0 18px; }
+        input { width:100%; padding:11px 13px; border-radius:11px; border:1px solid var(--border); background:var(--input); color:var(--text); font-size:14px; outline:none; }
+        input:focus { border-color:var(--accent); }
+        button { width:100%; margin-top:14px; padding:11px; border:none; border-radius:11px; background:var(--accent); color:#fff; font-size:14px; cursor:pointer; }
+        button:hover { opacity:.9; }
+        .err { color:var(--err); font-size:12px; margin-top:10px; min-height:16px; text-align:center; }
+    </style>
+    <script>
+        (function () {
+            function sysDark() { return window.matchMedia('(prefers-color-scheme: dark)').matches; }
+            var t = null;
+            try { t = localStorage.getItem('lc_theme'); } catch (e) {}
+            var dark = t === 'dark' || (!t && sysDark());
+            if (dark) { document.documentElement.classList.add('dark'); }
+        })();
+    </script>
+</head>
+<body>
+<div class="card">
+    <h1>风传</h1>
+    <p>请输入访问密码。会话超时后需要重新登录。</p>
+    <form id="f" autocomplete="off">
+        <input id="pw" type="password" placeholder="密码" autocomplete="current-password" autofocus>
+        <label style="display:flex;align-items:center;gap:8px;margin-top:12px;font-size:13px;color:var(--sub);cursor:pointer;">
+            <input id="remember" type="checkbox" style="width:auto;margin:0;accent-color:var(--accent);">
+            保持登录
+        </label>
+        <button type="submit">进入</button>
+    </form>
+    <div class="err" id="err"></div>
+</div>
+<script>
+    var f = document.getElementById('f');
+    f.addEventListener('submit', function (e) {
+        e.preventDefault();
+        var pw = document.getElementById('pw').value;
+        fetch('/api/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ password: pw, remember: document.getElementById('remember').checked })
+        }).then(function (r) {
+            return r.json().then(function (j) { return { s: r.status, j: j }; });
+        }).then(function (res) {
+            if (res.s === 200) {
+                var next = new URLSearchParams(location.search).get('next') || '/';
+                if (next.charAt(0) !== '/') next = '/';
+                location.href = next;
+            } else {
+                document.getElementById('err').textContent = (res.j && res.j.error) || '密码错误';
+            }
+        }).catch(function () {
+            document.getElementById('err').textContent = '网络错误，请重试';
+        });
+    });
+</script>
+</body>
+</html>
