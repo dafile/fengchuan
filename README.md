@@ -14,6 +14,16 @@
 
 它适合临时剪贴板、跨设备消息同步、局域网文件快传、课堂资料分发和私人轻量文件中转。
 
+## 界面预览
+
+| 电脑端 | 电脑端 Markdown |
+| --- | --- |
+| <img src="docs/screenshots/desktop-chat.webp" alt="风传电脑端主界面" width="100%"> | <img src="docs/screenshots/desktop-markdown.webp" alt="风传电脑端 Markdown 预览" width="100%"> |
+
+| 移动端 | 移动端 Markdown |
+| --- | --- |
+| <img src="docs/screenshots/mobile-chat.webp" alt="风传移动端主界面" width="100%"> | <img src="docs/screenshots/mobile-markdown.webp" alt="风传移动端 Markdown 预览" width="100%"> |
+
 ## 功能
 
 - 所有设备打开同一网址，共享同一条持久化消息流
