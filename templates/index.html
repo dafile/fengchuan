@@ -455,11 +455,38 @@
         highlightInto(s, name);
         return s;
     }
+    function startSafeDownload(id, filename) {
+        var frame = document.createElement('iframe');
+        frame.setAttribute('data-download-frame', '');
+        frame.setAttribute('aria-hidden', 'true');
+        frame.tabIndex = -1;
+        frame.style.cssText = 'position:fixed;left:-100px;top:-100px;width:1px;height:1px;opacity:0;pointer-events:none;';
+        document.body.appendChild(frame);
+        frame.src = '/download/' + encodeURI(id);
+        setTimeout(function () {
+            if (frame.parentNode) frame.parentNode.removeChild(frame);
+        }, 60000);
+    }
+    function setDownloadLink(link, id, filename) {
+        link.href = '/download/' + encodeURI(id);
+        link.download = filename || '';
+        link.setAttribute('data-safe-download', '');
+        link._downloadId = id;
+        link._downloadName = filename || '';
+        if (!link._downloadBound) {
+            link._downloadBound = true;
+            link.addEventListener('click', function (ev) {
+                if (!link._downloadId) return;
+                ev.preventDefault();
+                startSafeDownload(link._downloadId, link._downloadName);
+            });
+        }
+    }
     function actionRow(id, filename, allowView) {
         var row = document.createElement('div');
         row.className = 'flex items-center gap-4 text-xs mt-1.5';
         var dl = document.createElement('a');
-        dl.href = '/download/' + encodeURI(id);
+        setDownloadLink(dl, id, filename);
         dl.className = 'text-blue hover:text-sapphire';
         dl.textContent = '下载';
         row.appendChild(dl);
@@ -495,28 +522,32 @@
             var isVideo = VIDEO.test(e.Filename);
             if (isImg) {
                 var bub = document.createElement('div');
-                bub.className = 'bg-base border border-surface1 rounded-2xl px-2 py-2 shadow-sm cursor-pointer max-w-[80%]';
+                bub.className = 'w-fit bg-base border border-surface1 rounded-2xl p-2 shadow-sm cursor-pointer max-w-[80%]';
                 var im = document.createElement('img');
                 im.src = '/download/' + encodeURI(e.ID);
-                im.className = 'rounded-xl max-h-56 max-w-full object-cover';
+                im.className = 'block rounded-xl max-w-full object-contain';
+                im.style.maxHeight = 'min(65vh, 520px)';
+                im.style.width = 'auto';
+                im.style.height = 'auto';
                 im.loading = 'lazy';
                 im.addEventListener('load', function () { if (stickBottom) { chat.scrollTop = chat.scrollHeight; } });
-                im.addEventListener('click', function () { openLightbox(e.ID); });
+                im.addEventListener('click', function () { openLightbox(e.ID, e.Filename); });
                 bub.appendChild(im);
                 var cap = document.createElement('div');
-                cap.className = 'text-[10px] text-overlay1 mt-1 px-1 flex items-center justify-between gap-3';
+                cap.className = 'text-[10px] text-overlay1 mt-1 max-w-[80%] flex items-start justify-between gap-3';
+                cap.setAttribute('data-image-caption', '');
                 var nm = document.createElement('span');
-                nm.className = 'fname';
+                nm.className = 'fname min-w-0';
                 nm.textContent = e.Filename;
                 nm.title = e.Filename;
                 cap.appendChild(nm);
                 var dl = document.createElement('a');
-                dl.href = '/download/' + encodeURI(e.ID);
+                setDownloadLink(dl, e.ID, e.Filename);
                 dl.className = 'text-blue hover:text-sapphire flex-none';
                 dl.textContent = '下载';
                 cap.appendChild(dl);
-                bub.appendChild(cap);
                 col.appendChild(bub);
+                col.appendChild(cap);
             } else if (isVideo) {
                 var vbub = document.createElement('div');
                 vbub.className = 'bg-base border border-surface1 rounded-2xl px-2 py-2 shadow-sm max-w-[85%]';
@@ -548,7 +579,7 @@
                 vnm.title = e.Filename;
                 vcap.appendChild(vnm);
                 var vdl = document.createElement('a');
-                vdl.href = '/download/' + encodeURI(e.ID);
+                setDownloadLink(vdl, e.ID, e.Filename);
                 vdl.className = 'text-blue hover:text-sapphire flex-none';
                 vdl.textContent = '下载';
                 vcap.appendChild(vdl);
@@ -663,7 +694,11 @@
     var lightboxDl = document.getElementById('lightbox-dl');
     document.getElementById('lightbox-close').addEventListener('click', function () { lightbox.classList.add('hidden'); });
     lightbox.addEventListener('click', function (e) { if (e.target === lightbox) lightbox.classList.add('hidden'); });
-    function openLightbox(id) { lightboxImg.src = '/download/' + encodeURI(id); lightboxDl.href = '/download/' + encodeURI(id); lightbox.classList.remove('hidden'); }
+    function openLightbox(id, filename) {
+        lightboxImg.src = '/download/' + encodeURI(id);
+        setDownloadLink(lightboxDl, id, filename);
+        lightbox.classList.remove('hidden');
+    }
 
     var textview = document.getElementById('textview');
     document.getElementById('textview-close').addEventListener('click', function () { textview.classList.add('hidden'); });
@@ -683,6 +718,7 @@
     function safeMarkdownUrl(value) {
         var url = String(value || '').trim();
         if (!url) return '';
+        if (url.indexOf('\\') !== -1 || /^\/\//.test(url)) return '';
         if (/^(https?:|mailto:|tel:)/i.test(url)) return url;
         if (url.charAt(0) === '#' || url.charAt(0) === '/' || url.indexOf('./') === 0 || url.indexOf('../') === 0) return url;
         return '';
@@ -741,9 +777,9 @@
                     }
                 });
             } else {
-                var template = document.createElement('template');
-                template.innerHTML = html;
-                container.replaceChildren.apply(container, Array.prototype.slice.call(template.content.childNodes));
+                var parsed = new DOMParser().parseFromString(html, 'text/html');
+                sanitizeMarkdownContainer(parsed.body);
+                container.replaceChildren.apply(container, Array.prototype.slice.call(parsed.body.childNodes));
             }
             sanitizeMarkdownContainer(container);
             return true;
@@ -791,7 +827,7 @@
                 tip.className = 'text-sm text-subtext0 mb-3 font-sans';
                 tip.textContent = '文件较大（' + mb + ' MB），不适合在线预览。';
                 var dl = document.createElement('a');
-                dl.href = '/download/' + encodeURI(id);
+                setDownloadLink(dl, id, name);
                 dl.className = 'text-blue hover:text-sapphire text-sm font-sans';
                 dl.textContent = '点击下载查看';
                 bodyEl.appendChild(tip);
@@ -815,8 +851,8 @@
     versionTag.addEventListener('click', function () {
         fetch('/api/changelog').then(function (r) { return r.text(); }).then(function (t) {
             var body = document.getElementById('cl-body');
-            if (window.marked) { body.innerHTML = marked.parse(t); }
-            else { body.textContent = t; }
+            body.replaceChildren();
+            if (!window.marked || !renderMarkdownInto(body, t)) body.textContent = t;
             clModal.classList.remove('hidden');
         }).catch(function () { alert('读取更新日志失败'); });
     });

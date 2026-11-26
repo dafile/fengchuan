@@ -2,7 +2,6 @@ package main
 
 import (
 	"archive/zip"
-	"crypto/hmac"
 	"crypto/sha256"
 	"crypto/subtle"
 	"embed"
@@ -14,7 +13,7 @@ import (
 	"io"
 	"io/fs"
 	"log"
-	"math/rand"
+	"mime/multipart"
 	"net/http"
 	"net/url"
 	"os"
@@ -45,6 +44,13 @@ type Entry struct {
 	Ts       int64
 	From     string
 	Sender   string
+}
+
+type apiAsset struct {
+	ID          string `json:"id"`
+	Filename    string `json:"filename"`
+	Size        int64  `json:"size"`
+	DownloadURL string `json:"download_url"`
 }
 
 type fileMeta struct {
@@ -89,6 +95,25 @@ func findFFmpeg() string {
 func videoThumbnailPath(id string) string {
 	sum := sha256.Sum256([]byte(filepath.Clean(id)))
 	return filepath.Join("data", "thumbs", hex.EncodeToString(sum[:])+".jpg")
+}
+
+func removeStoredFile(id string) error {
+	fullPath, err := safeDataPath(id)
+	if err != nil {
+		return err
+	}
+	if err := os.Remove(fullPath); err != nil {
+		return err
+	}
+	os.Remove(fullPath + ".meta")
+	os.Remove(videoThumbnailPath(id))
+	if expirationTracker != nil {
+		expirationTracker.mu.Lock()
+		delete(expirationTracker.Expirations, filepath.ToSlash(id))
+		expirationTracker.saveToFile()
+		expirationTracker.mu.Unlock()
+	}
+	return nil
 }
 
 func generateVideoThumbnail(videoPath, thumbnailPath string) error {
@@ -147,7 +172,9 @@ func writeMeta(dir, name string, m fileMeta) {
 	if err != nil {
 		return
 	}
-	os.WriteFile(filepath.Join("data", dir, name+".meta"), b, 0644)
+	if err := atomicWriteFile(filepath.Join("data", dir, name+".meta"), b, 0644); err != nil {
+		log.Printf("Failed to write metadata for %s/%s: %v", dir, name, err)
+	}
 }
 
 func readMeta(dir, name string) fileMeta {
@@ -255,7 +282,7 @@ var expirationTracker *ExpirationTracker
 var expirationOptions = []string{"Never", "1 hour", "4 hours", "1 day", "Custom"}
 
 // appVersion and changelogPath are shown in the header; keep in sync with CHANGELOG.md
-const appVersion = "v1.13.1"
+const appVersion = "v1.15.0"
 const changelogPath = "CHANGELOG.md"
 
 func initExpirationTracker() *ExpirationTracker {
@@ -269,7 +296,9 @@ func initExpirationTracker() *ExpirationTracker {
 		if err == nil {
 			var storedTracker ExpirationTracker
 			if err := json.Unmarshal(data, &storedTracker); err == nil {
-				tracker.Expirations = storedTracker.Expirations
+				for fileID, expiry := range storedTracker.Expirations {
+					tracker.Expirations[filepath.ToSlash(fileID)] = expiry
+				}
 			}
 		}
 	}
@@ -311,6 +340,7 @@ func parseCustomDuration(customExpiry string) time.Duration {
 }
 
 func (t *ExpirationTracker) SetExpiration(fileID, expiryOption string) {
+	fileID = filepath.ToSlash(filepath.Clean(fileID))
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	if expiryOption == "Never" {
@@ -347,7 +377,7 @@ func (t *ExpirationTracker) saveToFile() {
 		return
 	}
 	expirationFile := filepath.Join("data", "expirations.json")
-	if err := os.WriteFile(expirationFile, data, 0644); err != nil {
+	if err := atomicWriteFile(expirationFile, data, 0644); err != nil {
 		log.Printf("Error saving expirations: %v", err)
 	}
 }
@@ -365,12 +395,20 @@ func (t *ExpirationTracker) CleanupExpired() []string {
 	}
 	// Delete expired files
 	for _, fileID := range expiredFiles {
-		err := os.Remove(filepath.Join("data", fileID))
+		fullPath, pathErr := safeDataPath(fileID)
+		if pathErr != nil {
+			log.Printf("Skipping unsafe expired path %q: %v", fileID, pathErr)
+			delete(t.Expirations, fileID)
+			continue
+		}
+		err := os.Remove(fullPath)
 		if err != nil && !os.IsNotExist(err) {
 			log.Printf("Error removing expired file %s: %v", fileID, err)
 		} else {
 			log.Printf("Removed expired file: %s", fileID)
 		}
+		os.Remove(fullPath + ".meta")
+		os.Remove(videoThumbnailPath(fileID))
 		delete(t.Expirations, fileID)
 	}
 	if len(expiredFiles) > 0 {
@@ -382,7 +420,8 @@ func (t *ExpirationTracker) CleanupExpired() []string {
 
 // ---------- 访问鉴权与站点设置 ----------
 
-var passwordFlag = flag.String("password", "change-me", "access password for the web UI")
+var passwordFlag = flag.String("password", "", "access password for the web UI")
+var apiKeyFlag = flag.String("api-key", "", "API key for /api/upload and /api/message")
 var sessionTTLFlag = flag.String("session-ttl", "10m", "session lifetime, e.g. 10m or 1h")
 
 var authPassword string
@@ -446,31 +485,15 @@ func saveSettings(s serverSettings) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join("data", "settings.json"), b, 0644)
+	return atomicWriteFile(filepath.Join("data", "settings.json"), b, 0644)
 }
 
 func tokenFor(exp int64) string {
-	mac := hmac.New(sha256.New, []byte(authPassword+"|lc"))
-	fmt.Fprintf(mac, "%d", exp)
-	return strconv.FormatInt(exp, 10) + ":" + hex.EncodeToString(mac.Sum(nil))
+	return makeSessionToken(exp)
 }
 
 func tokenExpiry(tok string) (int64, bool) {
-	i := strings.Index(tok, ":")
-	if i <= 0 {
-		return 0, false
-	}
-	exp, err := strconv.ParseInt(tok[:i], 10, 64)
-	if err != nil {
-		return 0, false
-	}
-	mac := hmac.New(sha256.New, []byte(authPassword+"|lc"))
-	fmt.Fprintf(mac, "%d", exp)
-	want := hex.EncodeToString(mac.Sum(nil))
-	if !hmac.Equal([]byte(want), []byte(tok[i+1:])) {
-		return 0, false
-	}
-	return exp, true
+	return parseSessionToken(tok)
 }
 
 func isAuthed(r *http.Request) bool {
@@ -479,23 +502,57 @@ func isAuthed(r *http.Request) bool {
 		return false
 	}
 	exp, ok := tokenExpiry(c.Value)
-	if !ok {
+	if !ok || sessionTokenRevoked(c.Value) {
 		return false
 	}
 	return time.Now().Unix() < exp
 }
 
+func isAPIKeyAuthed(r *http.Request) bool {
+	token := strings.TrimSpace(r.Header.Get("X-FengChuan-Key"))
+	if token == "" {
+		authorization := strings.TrimSpace(r.Header.Get("Authorization"))
+		if strings.HasPrefix(authorization, "Bearer ") {
+			token = strings.TrimSpace(strings.TrimPrefix(authorization, "Bearer "))
+		}
+	}
+	if token == "" || authAPIKey == "" {
+		return false
+	}
+	return subtle.ConstantTimeCompare([]byte(token), []byte(authAPIKey)) == 1
+}
+
 func authMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Security-Policy", "object-src 'none'; base-uri 'none'; frame-ancestors 'none'")
+		w.Header().Set("Cross-Origin-Resource-Policy", "same-origin")
+		w.Header().Set("Permissions-Policy", "camera=(), geolocation=(), microphone=()")
+		w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.Header().Set("X-Frame-Options", "DENY")
 		p := r.URL.Path
+		rateKey := authRateKey(r)
 		public := p == "/login" || p == "/api/login" || p == "/api/logout" ||
+			p == "/api/health" ||
 			(p == "/api/settings" && r.Method == http.MethodGet) ||
 			strings.HasPrefix(p, "/static/") ||
 			p == "/favicon.ico" || p == "/manifest.json" || p == "/sw.js" ||
 			p == "/icon-192.png" || p == "/icon-512.png" || p == "/style.css"
-		if !public && !isAuthed(r) {
+		apiKeyRoute := p == "/api/upload" || p == "/api/message"
+		if !public && !isAuthed(r) && !(apiKeyRoute && isAPIKeyAuthed(r)) {
+			if apiKeyRoute {
+				if !authLimiter.allow(rateKey) {
+					w.Header().Set("Content-Type", "application/json; charset=utf-8")
+					w.Header().Set("Retry-After", "60")
+					w.WriteHeader(http.StatusTooManyRequests)
+					json.NewEncoder(w).Encode(map[string]string{"error": "too many authentication attempts"})
+					return
+				}
+				authLimiter.fail(rateKey)
+			}
 			if strings.HasPrefix(p, "/api/") || p == "/submit" {
 				w.Header().Set("Content-Type", "application/json; charset=utf-8")
+				w.Header().Set("WWW-Authenticate", "Bearer")
 				w.WriteHeader(http.StatusUnauthorized)
 				json.NewEncoder(w).Encode(map[string]string{"error": "unauthorized"})
 				return
@@ -503,11 +560,14 @@ func authMiddleware(next http.Handler) http.Handler {
 			http.Redirect(w, r, "/login?next="+url.QueryEscape(r.URL.RequestURI()), http.StatusSeeOther)
 			return
 		}
+		if apiKeyRoute && isAPIKeyAuthed(r) {
+			authLimiter.reset(rateKey)
+		}
 		if !public {
 			if c, err := r.Cookie("lc_auth"); err == nil {
 				ttl := getAuthTTL()
 				if exp, ok := tokenExpiry(c.Value); ok && exp-time.Now().Unix() < int64(ttl.Seconds()/2) {
-					http.SetCookie(w, &http.Cookie{Name: "lc_auth", Value: tokenFor(time.Now().Add(ttl).Unix()), Path: "/", MaxAge: int(ttl.Seconds())})
+					setAuthCookie(w, tokenFor(time.Now().Add(ttl).Unix()), int(ttl.Seconds()))
 				}
 			}
 		}
@@ -535,26 +595,6 @@ function example() {
   console.log("Hello, Markdown!");
 }
 ` + "```"
-
-func generateUniqueFilename(baseDir, baseName string) string {
-	baseName = strings.TrimSpace(baseName)
-	// Sanitize: allow only letters (+unicode), numbers, space, dot, hyphen, underscore, () and []
-	reg := regexp.MustCompile(`[^\p{L}\p{N}\p{M}\s\.\-_()\[\]]`)
-	sanitizedName := reg.ReplaceAllString(baseName, "-")
-	log.Printf("Sanitized name %s TO %s\n", baseName, sanitizedName)
-	// First try without random prefix
-	if _, err := os.Stat(filepath.Join(baseDir, sanitizedName)); os.IsNotExist(err) {
-		return sanitizedName
-	}
-	// If file exists, add random prefix until we find a unique name
-	for {
-		randChars := fmt.Sprintf("%04d", rand.Intn(10000))
-		newName := fmt.Sprintf("%s-%s", randChars, sanitizedName)
-		if _, err := os.Stat(filepath.Join(baseDir, newName)); os.IsNotExist(err) {
-			return newName
-		}
-	}
-}
 
 func handleContentUpdates(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/event-stream")
@@ -624,7 +664,7 @@ func collectEntries() []Entry {
 			ts = meta.Ts
 		}
 		entries = append(entries, Entry{
-			ID:       filepath.Join("text", file.Name()),
+			ID:       "text/" + file.Name(),
 			Type:     "text",
 			Content:  string(data),
 			Filename: file.Name(),
@@ -648,7 +688,7 @@ func collectEntries() []Entry {
 			ts = meta.Ts
 		}
 		entries = append(entries, Entry{
-			ID:       filepath.Join("files", file.Name()),
+			ID:       "files/" + file.Name(),
 			Type:     "file",
 			Filename: file.Name(),
 			Ts:       ts,
@@ -685,7 +725,13 @@ func collectEntries() []Entry {
 
 func main() {
 	flag.Parse()
-	authPassword = *passwordFlag
+	authPassword = strings.TrimSpace(*passwordFlag)
+	if authPassword == "" {
+		authPassword = strings.TrimSpace(os.Getenv("FENGCHUAN_PASSWORD"))
+	}
+	if authPassword == "" || authPassword == "change-me" {
+		log.Fatal("Access password must be set with -password or FENGCHUAN_PASSWORD; the default change-me value is disabled")
+	}
 	{
 		d, err := time.ParseDuration(*sessionTTLFlag)
 		if err != nil || d <= 0 {
@@ -711,6 +757,19 @@ func main() {
 		log.Fatal(err)
 	}
 	log.Println("Data directory created/reused without errors.")
+	if err := initSessionSecurity(); err != nil {
+		log.Fatalf("Failed to initialize session security: %v", err)
+	}
+	configuredAPIKey := strings.TrimSpace(*apiKeyFlag)
+	if configuredAPIKey == "" {
+		configuredAPIKey = strings.TrimSpace(os.Getenv("FENGCHUAN_API_KEY"))
+	}
+	var err error
+	authAPIKey, err = loadOrCreateAPIKey(configuredAPIKey)
+	if err != nil {
+		log.Fatalf("Failed to initialize API key: %v", err)
+	}
+	log.Printf("API key initialized; key material is stored in %s", apiKeyFile)
 	createFileIfNotExists("notepad/md.file", mdPlaceholder)
 	createFileIfNotExists("links.file", "")
 
@@ -739,9 +798,17 @@ func main() {
 		}
 	}()
 
+	routes := http.NewServeMux()
+	registerRoutes(routes)
+
+	// Start server
+	log.Fatal(http.ListenAndServe(*listenAddress, authMiddleware(routes)))
+}
+
+func registerRoutes(routes *http.ServeMux) {
 	tmpl := template.Must(template.ParseFS(content, "templates/*.html"))
 
-	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+	routes.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		// Clean up expired files on page load
 		expirationTracker.CleanupExpired()
 		if r.URL.Path == "/admin" {
@@ -753,63 +820,69 @@ func main() {
 		tmpl.ExecuteTemplate(w, "index.html", nil)
 	})
 
-	http.HandleFunc("/md", func(w http.ResponseWriter, r *http.Request) {
+	routes.HandleFunc("/md", func(w http.ResponseWriter, r *http.Request) {
 		tmpl.ExecuteTemplate(w, "md.html", nil)
 	})
 
 	// Retrieve custom expiration options
-	http.HandleFunc("/api/batch-download", func(w http.ResponseWriter, r *http.Request) {
+	routes.HandleFunc("/api/batch-download", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		r.Body = http.MaxBytesReader(w, r.Body, maxJSONBodyBytes)
 		var ids []string
 		if err := json.NewDecoder(r.Body).Decode(&ids); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			http.Error(w, "Invalid JSON body", http.StatusBadRequest)
 			return
 		}
 		logAccess(r, "批量下载", fmt.Sprintf("%d 个文件", len(ids)))
 		w.Header().Set("Content-Type", "application/zip")
-		w.Header().Set("Content-Disposition", "attachment; filename=\"lanchat.zip\"")
+		w.Header().Set("Content-Disposition", contentDisposition("fengchuan.zip"))
 		zw := zip.NewWriter(w)
 		defer zw.Close()
 		for _, id := range ids {
-			rel := filepath.FromSlash(id)
-			if strings.Contains(rel, "..") {
-				continue
-			}
-			data, err := os.ReadFile(filepath.Join("data", rel))
+			fullPath, err := safeDataPath(id)
 			if err != nil {
 				continue
 			}
-			entryName := strings.ReplaceAll(rel, "\\", "/")
+			file, err := os.Open(fullPath)
+			if err != nil {
+				continue
+			}
+			entryName := filepath.ToSlash(strings.TrimPrefix(fullPath, "data"+string(os.PathSeparator)))
 			fw, err := zw.Create(entryName)
 			if err != nil {
+				file.Close()
 				continue
 			}
-			fw.Write(data)
+			io.Copy(fw, file)
+			file.Close()
 		}
 	})
 
-	http.HandleFunc("/api/delete-batch", func(w http.ResponseWriter, r *http.Request) {
+	routes.HandleFunc("/api/delete-batch", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != "POST" {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
+		r.Body = http.MaxBytesReader(w, r.Body, maxJSONBodyBytes)
 		var ids []string
 		if err := json.NewDecoder(r.Body).Decode(&ids); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			http.Error(w, "Invalid JSON body", http.StatusBadRequest)
 			return
 		}
 		for _, id := range ids {
-			rel := filepath.FromSlash(id)
-			if strings.Contains(rel, "..") {
-				continue
+			if err := removeStoredFile(id); err != nil {
+				log.Printf("Rejected or failed batch delete for %q: %v", id, err)
 			}
-			os.Remove(filepath.Join("data", rel))
 		}
 		notifyContentChange()
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 	})
 
-	http.HandleFunc("/api/stats", func(w http.ResponseWriter, r *http.Request) {
+	routes.HandleFunc("/api/stats", func(w http.ResponseWriter, r *http.Request) {
 		entries := collectEntries()
 		textN, fileN, linkN := 0, 0, 0
 		var totalSize int64
@@ -836,59 +909,229 @@ func main() {
 		})
 	})
 
-	http.HandleFunc("/login", func(w http.ResponseWriter, r *http.Request) {
+	routes.HandleFunc("/login", func(w http.ResponseWriter, r *http.Request) {
 		logAccess(r, "打开登录页", "")
 		tmpl.ExecuteTemplate(w, "login.html", nil)
 	})
 
-	http.HandleFunc("/api/login", func(w http.ResponseWriter, r *http.Request) {
+	routes.HandleFunc("/api/health", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.Header().Set("Cache-Control", "no-store")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"ok":      true,
+			"name":    "FengChuan",
+			"version": appVersion,
+		})
+	})
+
+	routes.HandleFunc("/api/login", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != "POST" {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
+		rateKey := authRateKey(r)
+		if !authLimiter.allow(rateKey) {
+			w.Header().Set("Content-Type", "application/json; charset=utf-8")
+			w.Header().Set("Retry-After", "60")
+			w.WriteHeader(http.StatusTooManyRequests)
+			json.NewEncoder(w).Encode(map[string]string{"error": "too many authentication attempts"})
+			return
+		}
+		r.Body = http.MaxBytesReader(w, r.Body, 4<<10)
 		var payload struct {
 			Password string `json:"password"`
 			Remember bool   `json:"remember"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			http.Error(w, "Invalid JSON body", http.StatusBadRequest)
 			return
 		}
 		if subtle.ConstantTimeCompare([]byte(payload.Password), []byte(authPassword)) != 1 {
+			authLimiter.fail(rateKey)
 			logAccess(r, "登录失败", "密码错误")
-			time.Sleep(400 * time.Millisecond)
+			time.Sleep(250 * time.Millisecond)
 			w.Header().Set("Content-Type", "application/json; charset=utf-8")
 			w.WriteHeader(http.StatusUnauthorized)
 			json.NewEncoder(w).Encode(map[string]string{"error": "密码错误"})
 			return
 		}
+		authLimiter.reset(rateKey)
 		ttl := getAuthTTL()
 		if payload.Remember {
 			ttl = 365 * 24 * time.Hour
 		}
-		http.SetCookie(w, &http.Cookie{Name: "lc_auth", Value: tokenFor(time.Now().Add(ttl).Unix()), Path: "/", MaxAge: int(ttl.Seconds())})
+		setAuthCookie(w, tokenFor(time.Now().Add(ttl).Unix()), int(ttl.Seconds()))
 		logAccess(r, "登录成功", "")
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		json.NewEncoder(w).Encode(map[string]string{"ok": "true"})
 	})
 
-	http.HandleFunc("/api/logout", func(w http.ResponseWriter, r *http.Request) {
-		http.SetCookie(w, &http.Cookie{Name: "lc_auth", Value: "", Path: "/", MaxAge: -1})
+	routes.HandleFunc("/api/upload", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		r.Body = http.MaxBytesReader(w, r.Body, maxUploadBytes)
+		if err := r.ParseMultipartForm(32 << 20); err != nil {
+			http.Error(w, "Invalid or oversized upload", http.StatusRequestEntityTooLarge)
+			return
+		}
+		sender := strings.TrimSpace(r.FormValue("sender"))
+		if sender == "" {
+			sender = "API"
+		}
+		expiry := strings.TrimSpace(r.FormValue("expiry"))
+		if expiry == "" {
+			expiry = "Never"
+		}
+		var headers []*multipart.FileHeader
+		for _, field := range []string{"file", "files", "file-upload"} {
+			headers = append(headers, r.MultipartForm.File[field]...)
+		}
+		note := strings.TrimSpace(r.FormValue("note"))
+		if len(headers) == 0 && note == "" {
+			http.Error(w, "No files or note supplied", http.StatusBadRequest)
+			return
+		}
+		files := make([]apiAsset, 0, len(headers))
+		for _, fileHeader := range headers {
+			file, err := fileHeader.Open()
+			if err != nil {
+				http.Error(w, "Failed to read upload", http.StatusBadRequest)
+				return
+			}
+			output, uniqueFileName, err := createUniqueFile(filepath.Join("data", "files"), fileHeader.Filename)
+			if err != nil {
+				file.Close()
+				http.Error(w, "Failed to save upload", http.StatusInternalServerError)
+				return
+			}
+			destination := output.Name()
+			size, copyErr := io.Copy(output, file)
+			closeErr := output.Close()
+			file.Close()
+			if copyErr != nil || closeErr != nil {
+				os.Remove(destination)
+				http.Error(w, "Failed to save upload", http.StatusInternalServerError)
+				return
+			}
+			writeMeta("files", uniqueFileName, fileMeta{Ts: time.Now().Unix(), From: clientIP(r), Sender: sender})
+			if expiry != "Never" {
+				expirationTracker.SetExpiration("files/"+uniqueFileName, expiry)
+			}
+			id := "files/" + uniqueFileName
+			files = append(files, apiAsset{
+				ID:          id,
+				Filename:    uniqueFileName,
+				Size:        size,
+				DownloadURL: "/download/" + url.PathEscape(id),
+			})
+			logAccess(r, "API上传文件", uniqueFileName)
+		}
+		var noteAsset *apiAsset
+		if note != "" {
+			noteName := strings.TrimSpace(r.FormValue("note_name"))
+			if noteName == "" {
+				noteName = "API更新说明-" + time.Now().Format("20060102-150405") + ".md"
+			}
+			uniqueNoteName, err := writeUniqueFile(filepath.Join("data", "text"), noteName, []byte(note))
+			if err != nil {
+				http.Error(w, "Failed to save note", http.StatusInternalServerError)
+				return
+			}
+			writeMeta("text", uniqueNoteName, fileMeta{Ts: time.Now().Unix(), From: clientIP(r), Sender: sender})
+			id := "text/" + uniqueNoteName
+			noteAsset = &apiAsset{
+				ID:          id,
+				Filename:    uniqueNoteName,
+				Size:        int64(len([]byte(note))),
+				DownloadURL: "/download/" + url.PathEscape(id),
+			}
+			logAccess(r, "API更新说明", uniqueNoteName)
+		}
+		notifyContentChange()
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"ok":    true,
+			"files": files,
+			"note":  noteAsset,
+		})
+	})
+
+	routes.HandleFunc("/api/message", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		r.Body = http.MaxBytesReader(w, r.Body, maxMessageBytes)
+		var payload struct {
+			Content string `json:"content"`
+			Name    string `json:"name"`
+			Sender  string `json:"sender"`
+			Expiry  string `json:"expiry"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			http.Error(w, "Invalid JSON body", http.StatusBadRequest)
+			return
+		}
+		if strings.TrimSpace(payload.Content) == "" {
+			http.Error(w, "Content cannot be empty", http.StatusBadRequest)
+			return
+		}
+		if payload.Sender == "" {
+			payload.Sender = "API"
+		}
+		if payload.Expiry == "" {
+			payload.Expiry = "Never"
+		}
+		fileName := payload.Name
+		if fileName == "" {
+			fileName = "API消息-" + time.Now().Format("20060102-150405")
+		}
+		uniqueFileName, err := writeUniqueFile(filepath.Join("data", "text"), fileName, []byte(payload.Content))
+		if err != nil {
+			http.Error(w, "Failed to save message", http.StatusInternalServerError)
+			return
+		}
+		writeMeta("text", uniqueFileName, fileMeta{Ts: time.Now().Unix(), From: clientIP(r), Sender: payload.Sender})
+		if payload.Expiry != "Never" {
+			expirationTracker.SetExpiration("text/"+uniqueFileName, payload.Expiry)
+		}
+		logAccess(r, "API发消息", payload.Sender)
+		notifyContentChange()
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"ok":       true,
+			"id":       "text/" + uniqueFileName,
+			"filename": uniqueFileName,
+		})
+	})
+
+	routes.HandleFunc("/api/logout", func(w http.ResponseWriter, r *http.Request) {
+		if c, err := r.Cookie("lc_auth"); err == nil {
+			if expiry, ok := tokenExpiry(c.Value); ok {
+				if err := revokeSessionToken(c.Value, expiry); err != nil {
+					log.Printf("Failed to revoke session: %v", err)
+				}
+			}
+		}
+		clearAuthCookie(w)
 		logAccess(r, "退出登录", "")
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		json.NewEncoder(w).Encode(map[string]string{"ok": "true"})
 	})
 
-	http.HandleFunc("/api/settings", func(w http.ResponseWriter, r *http.Request) {
+	routes.HandleFunc("/api/settings", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		w.Header().Set("Cache-Control", "no-store")
 		if r.Method == "POST" {
+			r.Body = http.MaxBytesReader(w, r.Body, 64<<10)
 			var payload struct {
 				DefaultTheme string `json:"defaultTheme"`
 				SessionTTL   string `json:"sessionTTL"`
 			}
 			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-				http.Error(w, err.Error(), http.StatusBadRequest)
+				http.Error(w, "Invalid JSON body", http.StatusBadRequest)
 				return
 			}
 			cur := loadSettings()
@@ -909,7 +1152,7 @@ func main() {
 				setAuthTTL(d)
 			}
 			if err := saveSettings(cur); err != nil {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
+				http.Error(w, "Failed to save settings", http.StatusInternalServerError)
 				return
 			}
 			json.NewEncoder(w).Encode(map[string]string{"ok": "true"})
@@ -922,12 +1165,12 @@ func main() {
 		json.NewEncoder(w).Encode(s)
 	})
 
-	http.HandleFunc("/access-log", func(w http.ResponseWriter, r *http.Request) {
+	routes.HandleFunc("/access-log", func(w http.ResponseWriter, r *http.Request) {
 		logAccess(r, "访问记录页", "")
 		tmpl.ExecuteTemplate(w, "accesslog.html", nil)
 	})
 
-	http.HandleFunc("/api/access-log", func(w http.ResponseWriter, r *http.Request) {
+	routes.HandleFunc("/api/access-log", func(w http.ResponseWriter, r *http.Request) {
 		qs := r.URL.Query()
 		offset, _ := strconv.Atoi(qs.Get("offset"))
 		limit, _ := strconv.Atoi(qs.Get("limit"))
@@ -940,25 +1183,29 @@ func main() {
 		json.NewEncoder(w).Encode(map[string]any{"total": total, "records": records})
 	})
 
-	http.HandleFunc("/api/access-log-clear", func(w http.ResponseWriter, r *http.Request) {
+	routes.HandleFunc("/api/access-log-clear", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != "POST" {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
 		accessLogMu.Lock()
-		os.WriteFile(accessLogPath, []byte{}, 0644)
+		err := atomicWriteFile(accessLogPath, []byte{}, 0644)
 		accessLogMu.Unlock()
+		if err != nil {
+			http.Error(w, "Failed to clear access log", http.StatusInternalServerError)
+			return
+		}
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		json.NewEncoder(w).Encode(map[string]string{"ok": "true"})
 	})
 
-	http.HandleFunc("/api/version", func(w http.ResponseWriter, r *http.Request) {
+	routes.HandleFunc("/api/version", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		w.Header().Set("Cache-Control", "no-store")
 		json.NewEncoder(w).Encode(map[string]string{"version": appVersion})
 	})
 
-	http.HandleFunc("/api/changelog", func(w http.ResponseWriter, r *http.Request) {
+	routes.HandleFunc("/api/changelog", func(w http.ResponseWriter, r *http.Request) {
 		data, err := content.ReadFile(changelogPath)
 		if err != nil {
 			http.Error(w, "CHANGELOG.md not found", http.StatusNotFound)
@@ -969,7 +1216,7 @@ func main() {
 		w.Write(data)
 	})
 
-	http.HandleFunc("/getExpiryOptions", func(w http.ResponseWriter, r *http.Request) {
+	routes.HandleFunc("/getExpiryOptions", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(expirationOptions)
 	})
@@ -979,9 +1226,9 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to create static sub-filesystem: %v", err)
 	}
-	http.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.FS(staticFS))))
+	routes.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.FS(staticFS))))
 
-	http.HandleFunc("/style.css", func(w http.ResponseWriter, r *http.Request) {
+	routes.HandleFunc("/style.css", func(w http.ResponseWriter, r *http.Request) {
 		file, err := staticFS.Open("style.css")
 		if err != nil {
 			http.Error(w, "Style not found", http.StatusNotFound)
@@ -992,7 +1239,7 @@ func main() {
 		io.Copy(w, file)
 	})
 
-	http.HandleFunc("/manifest.json", func(w http.ResponseWriter, r *http.Request) {
+	routes.HandleFunc("/manifest.json", func(w http.ResponseWriter, r *http.Request) {
 		file, err := staticFS.Open("manifest.json")
 		if err != nil {
 			http.Error(w, "Manifest not found", http.StatusNotFound)
@@ -1003,7 +1250,7 @@ func main() {
 		io.Copy(w, file)
 	})
 
-	http.HandleFunc("/sw.js", func(w http.ResponseWriter, r *http.Request) {
+	routes.HandleFunc("/sw.js", func(w http.ResponseWriter, r *http.Request) {
 		file, err := staticFS.Open("sw.js")
 		if err != nil {
 			http.Error(w, "Service worker not found", http.StatusNotFound)
@@ -1014,7 +1261,7 @@ func main() {
 		io.Copy(w, file)
 	})
 
-	http.HandleFunc("/md.js", func(w http.ResponseWriter, r *http.Request) {
+	routes.HandleFunc("/md.js", func(w http.ResponseWriter, r *http.Request) {
 		file, err := staticFS.Open("md.js")
 		if err != nil {
 			http.Error(w, "JavaScript not found", http.StatusNotFound)
@@ -1026,7 +1273,7 @@ func main() {
 	})
 
 	// Handle favicon and icons
-	http.HandleFunc("/favicon.ico", func(w http.ResponseWriter, r *http.Request) {
+	routes.HandleFunc("/favicon.ico", func(w http.ResponseWriter, r *http.Request) {
 		file, err := staticFS.Open("favicon.ico")
 		if err != nil {
 			http.Error(w, "Favicon not found", http.StatusNotFound)
@@ -1037,7 +1284,7 @@ func main() {
 		io.Copy(w, file)
 	})
 
-	http.HandleFunc("/icon-192.png", func(w http.ResponseWriter, r *http.Request) {
+	routes.HandleFunc("/icon-192.png", func(w http.ResponseWriter, r *http.Request) {
 		file, err := staticFS.Open("icon-192.png")
 		if err != nil {
 			http.Error(w, "Icon not found", http.StatusNotFound)
@@ -1048,7 +1295,7 @@ func main() {
 		io.Copy(w, file)
 	})
 
-	http.HandleFunc("/icon-512.png", func(w http.ResponseWriter, r *http.Request) {
+	routes.HandleFunc("/icon-512.png", func(w http.ResponseWriter, r *http.Request) {
 		file, err := staticFS.Open("icon-512.png")
 		if err != nil {
 			http.Error(w, "Icon not found", http.StatusNotFound)
@@ -1060,7 +1307,7 @@ func main() {
 	})
 
 	// API endpoint to load notepad content
-	http.HandleFunc("/notepad/", func(w http.ResponseWriter, r *http.Request) {
+	routes.HandleFunc("/notepad/", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case "GET":
 			filename := strings.TrimPrefix(r.URL.Path, "/notepad/")
@@ -1083,12 +1330,13 @@ func main() {
 				http.Error(w, "Invalid notepad file", http.StatusBadRequest)
 				return
 			}
+			r.Body = http.MaxBytesReader(w, r.Body, maxMessageBytes)
 			content, err := io.ReadAll(r.Body)
 			if err != nil {
 				http.Error(w, "Error reading request body", http.StatusInternalServerError)
 				return
 			}
-			err = os.WriteFile(filepath.Join("data", "notepad", filename), content, 0644)
+			err = atomicWriteFile(filepath.Join("data", "notepad", filename), content, 0644)
 			if err != nil {
 				http.Error(w, "Error saving notepad file", http.StatusInternalServerError)
 				return
@@ -1101,20 +1349,21 @@ func main() {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 	})
 
-	http.HandleFunc("/api/entries", func(w http.ResponseWriter, r *http.Request) {
+	routes.HandleFunc("/api/entries", func(w http.ResponseWriter, r *http.Request) {
 		entries := collectEntries()
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		w.Header().Set("Cache-Control", "no-store")
 		json.NewEncoder(w).Encode(entries)
 	})
 
-	http.HandleFunc("/submit", func(w http.ResponseWriter, r *http.Request) {
+	routes.HandleFunc("/submit", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != "POST" {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
 		contentType := r.Header.Get("Content-Type")
 		if strings.HasPrefix(contentType, "application/json") {
+			r.Body = http.MaxBytesReader(w, r.Body, maxJSONBodyBytes)
 			var payload struct {
 				Content string `json:"content"`
 				Name    string `json:"name"`
@@ -1123,7 +1372,7 @@ func main() {
 				Sender  string `json:"sender"`
 			}
 			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-				http.Error(w, err.Error(), http.StatusBadRequest)
+				http.Error(w, "Invalid JSON body", http.StatusBadRequest)
 				return
 			}
 			if payload.Type == "link" {
@@ -1138,12 +1387,12 @@ func main() {
 				}
 				f, err := os.OpenFile(filepath.Join("data", "links.file"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 				if err != nil {
-					http.Error(w, err.Error(), http.StatusInternalServerError)
+					http.Error(w, "Failed to save link", http.StatusInternalServerError)
 					return
 				}
 				defer f.Close()
 				if _, err := f.WriteString(payload.Content + "\n"); err != nil {
-					http.Error(w, err.Error(), http.StatusInternalServerError)
+					http.Error(w, "Failed to save link", http.StatusInternalServerError)
 					return
 				}
 				logAccess(r, "发链接", payload.Content)
@@ -1156,15 +1405,15 @@ func main() {
 				if filename == "" {
 					filename = time.Now().Format("Jan-02 15-04-05")
 				}
-				uniqueFileName := generateUniqueFilename("data/text", filename)
-				if err := os.WriteFile(filepath.Join("data/text", uniqueFileName), []byte(payload.Content), 0644); err != nil {
-					http.Error(w, err.Error(), http.StatusInternalServerError)
+				uniqueFileName, err := writeUniqueFile(filepath.Join("data", "text"), filename, []byte(payload.Content))
+				if err != nil {
+					http.Error(w, "Failed to save message", http.StatusInternalServerError)
 					return
 				}
 				writeMeta("text", uniqueFileName, fileMeta{Ts: time.Now().Unix(), From: clientIP(r), Sender: payload.Sender})
 				logAccess(r, "发消息", payload.Sender)
 				if payload.Expiry != "" && payload.Expiry != "Never" {
-					expirationTracker.SetExpiration(filepath.Join("text", uniqueFileName), payload.Expiry)
+					expirationTracker.SetExpiration("text/"+uniqueFileName, payload.Expiry)
 				}
 			}
 			notifyContentChange()
@@ -1173,8 +1422,9 @@ func main() {
 			json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 			return
 		}
-		if err := r.ParseMultipartForm(100 << 20); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+		r.Body = http.MaxBytesReader(w, r.Body, maxUploadBytes)
+		if err := r.ParseMultipartForm(32 << 20); err != nil {
+			http.Error(w, "Invalid or oversized upload", http.StatusRequestEntityTooLarge)
 			return
 		}
 		entryType := r.FormValue("type")
@@ -1195,12 +1445,12 @@ func main() {
 			linksFilePath := filepath.Join("data", "links.file")
 			f, err := os.OpenFile(linksFilePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 			if err != nil {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
+				http.Error(w, "Failed to save link", http.StatusInternalServerError)
 				return
 			}
 			defer f.Close()
 			if _, err := f.WriteString(content + "\n"); err != nil {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
+				http.Error(w, "Failed to save link", http.StatusInternalServerError)
 				return
 			}
 			log.Printf("Saved link %s\n", content)
@@ -1220,26 +1470,35 @@ func main() {
 						if fileName == "" {
 							fileName = fileHeader.Filename
 						}
-						uniqueFileName := generateUniqueFilename("data/files", fileName)
-						f, err := os.Create(filepath.Join("data/files", uniqueFileName))
+						f, uniqueFileName, err := createUniqueFile(filepath.Join("data", "files"), fileName)
 						if err != nil {
 							return err
 						}
-						defer f.Close()
+						cleanup := true
+						defer func() {
+							if cleanup {
+								f.Close()
+								os.Remove(f.Name())
+							}
+						}()
 						if _, err := io.Copy(f, file); err != nil {
 							return err
 						}
+						if err := f.Close(); err != nil {
+							return err
+						}
+						cleanup = false
 						writeMeta("files", uniqueFileName, fileMeta{Ts: time.Now().Unix(), From: clientIP(r), Sender: r.FormValue("sender")})
 						logAccess(r, "上传文件", uniqueFileName)
 						if expiryOption != "Never" {
-							fileID := filepath.Join("files", uniqueFileName)
+							fileID := "files/" + uniqueFileName
 							expirationTracker.SetExpiration(fileID, expiryOption)
 						}
 						log.Printf("Saved file %s with expiry %s\n", uniqueFileName, expiryOption)
 						return nil
 					}()
 					if err != nil {
-						http.Error(w, err.Error(), http.StatusInternalServerError)
+						http.Error(w, "Failed to save upload", http.StatusInternalServerError)
 						return
 					}
 				}
@@ -1249,16 +1508,15 @@ func main() {
 				if filename == "" {
 					filename = time.Now().Format("Jan-02 15-04-05")
 				}
-				uniqueFileName := generateUniqueFilename("data/text", filename)
-				err := os.WriteFile(filepath.Join("data/text", uniqueFileName), []byte(content), 0644)
+				uniqueFileName, err := writeUniqueFile(filepath.Join("data", "text"), filename, []byte(content))
 				if err != nil {
-					http.Error(w, err.Error(), http.StatusInternalServerError)
+					http.Error(w, "Failed to save message", http.StatusInternalServerError)
 					return
 				}
 				writeMeta("text", uniqueFileName, fileMeta{Ts: time.Now().Unix(), From: clientIP(r), Sender: r.FormValue("sender")})
 				logAccess(r, "发消息", r.FormValue("sender"))
 				if expiryOption != "Never" {
-					fileID := filepath.Join("text", uniqueFileName)
+					fileID := "text/" + uniqueFileName
 					expirationTracker.SetExpiration(fileID, expiryOption)
 				}
 				log.Printf("Saved text snippet %s with expiry %s\n", uniqueFileName, expiryOption)
@@ -1274,54 +1532,64 @@ func main() {
 		http.Redirect(w, r, "/", http.StatusSeeOther)
 	})
 
-	http.HandleFunc("/rename/", func(w http.ResponseWriter, r *http.Request) {
+	routes.HandleFunc("/rename/", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != "POST" {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
-		oldPath := strings.TrimPrefix(r.URL.Path, "/rename/")
+		oldPathID := strings.TrimPrefix(r.URL.Path, "/rename/")
 		newName := r.FormValue("newname")
 		if newName == "" {
 			http.Error(w, "New name cannot be empty", http.StatusBadRequest)
 			return
 		}
-		baseDir := filepath.Dir(filepath.Join("data", oldPath))
-		newName = generateUniqueFilename(baseDir, newName)
-
-		// Get the new full path
+		oldFullPath, err := safeDataPath(oldPathID)
+		if err != nil {
+			http.Error(w, "Invalid path", http.StatusBadRequest)
+			return
+		}
+		baseDir := filepath.Dir(oldFullPath)
+		newName, err = reserveUniquePath(baseDir, newName)
+		if err != nil {
+			http.Error(w, "Failed to allocate filename", http.StatusInternalServerError)
+			return
+		}
 		newPath := filepath.Join(baseDir, newName)
-		oldFullPath := filepath.Join("data", oldPath)
-		// Check if there's an expiration for this file
+		newPathID := filepath.ToSlash(strings.TrimPrefix(newPath, "data"+string(os.PathSeparator)))
+		oldPathID = filepath.ToSlash(strings.TrimPrefix(oldFullPath, "data"+string(os.PathSeparator)))
+		// Rename the file
+		err = os.Rename(oldFullPath, newPath)
+		if err != nil {
+			os.Remove(newPath)
+			http.Error(w, "Failed to rename file", http.StatusInternalServerError)
+			return
+		}
+		os.Rename(oldFullPath+".meta", newPath+".meta")
 		expirationTracker.mu.Lock()
-		expiryTime, hasExpiry := expirationTracker.Expirations[oldPath]
-		if hasExpiry {
-			// Remove old entry and add new one
-			delete(expirationTracker.Expirations, oldPath)
-			relNewPath := strings.TrimPrefix(newPath, "data/")
-			relNewPath = strings.ReplaceAll(relNewPath, "\\", "/") // Ensure cross-platform path separators
-			expirationTracker.Expirations[relNewPath] = expiryTime
+		if expiryTime, hasExpiry := expirationTracker.Expirations[oldPathID]; hasExpiry {
+			delete(expirationTracker.Expirations, oldPathID)
+			expirationTracker.Expirations[newPathID] = expiryTime
 			expirationTracker.saveToFile()
 		}
 		expirationTracker.mu.Unlock()
-		// Rename the file
-		err := os.Rename(oldFullPath, newPath)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
 		notifyContentChange()
 		http.Redirect(w, r, "/", http.StatusSeeOther)
-		log.Printf("Renamed %s to %s\n", oldPath, newName)
+		log.Printf("Renamed %s to %s\n", oldPathID, newName)
 	})
 
-	http.HandleFunc("/raw/", func(w http.ResponseWriter, r *http.Request) {
+	routes.HandleFunc("/raw/", func(w http.ResponseWriter, r *http.Request) {
 		id := strings.TrimPrefix(r.URL.Path, "/raw/")
 		if !strings.HasPrefix(id, "text/") {
 			http.Error(w, "Only text files can be accessed", http.StatusBadRequest)
 			return
 		}
+		fullPath, err := safeDataPath(id)
+		if err != nil {
+			http.Error(w, "Invalid path", http.StatusBadRequest)
+			return
+		}
 		logAccess(r, "查看", strings.TrimPrefix(id, "text/"))
-		content, err := os.ReadFile(filepath.Join("data", id))
+		content, err := os.ReadFile(fullPath)
 		if err != nil {
 			http.Error(w, "File not found", 404)
 			return
@@ -1331,13 +1599,17 @@ func main() {
 		w.Write(content)
 	})
 
-	http.HandleFunc("/download/", func(w http.ResponseWriter, r *http.Request) {
+	routes.HandleFunc("/download/", func(w http.ResponseWriter, r *http.Request) {
 		filename := strings.TrimPrefix(r.URL.Path, "/download/")
+		filePath, err := safeDataPath(filename)
+		if err != nil {
+			http.Error(w, "Invalid path", http.StatusBadRequest)
+			return
+		}
 		accept := r.Header.Get("Accept")
 		if !strings.HasPrefix(accept, "image/") && !strings.HasPrefix(accept, "video/") && !strings.HasPrefix(accept, "audio/") {
 			logAccess(r, "查看/下载", filepath.Base(filename))
 		}
-		filePath := filepath.Join("data", filename)
 		fileInfo, err := os.Stat(filePath)
 		if err != nil {
 			http.Error(w, "File not found", http.StatusNotFound)
@@ -1345,7 +1617,7 @@ func main() {
 		}
 		file, err := os.Open(filePath)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			http.Error(w, "Failed to open file", http.StatusInternalServerError)
 			return
 		}
 		defer file.Close()
@@ -1380,34 +1652,61 @@ func main() {
 			buffer := make([]byte, 512)
 			_, err = file.Read(buffer)
 			if err != nil && err != io.EOF {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
+				http.Error(w, "Failed to read file", http.StatusInternalServerError)
 				return
 			}
 			contentType = http.DetectContentType(buffer)
 			_, err = file.Seek(0, 0)
 			if err != nil {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
+				http.Error(w, "Failed to read file", http.StatusInternalServerError)
 				return
 			}
 		}
 		baseFilename := filepath.Base(filename)
 		w.Header().Set("Content-Type", contentType)
-		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", baseFilename))
+		w.Header().Set("Content-Disposition", contentDisposition(baseFilename))
 		w.Header().Set("Cache-Control", "no-store")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		http.ServeContent(w, r, baseFilename, fileInfo.ModTime(), file)
 		log.Printf("Served %s for download\n", filename)
 	})
 
-	http.HandleFunc("/view/", func(w http.ResponseWriter, r *http.Request) {
+	routes.HandleFunc("/view/", func(w http.ResponseWriter, r *http.Request) {
 		filename := strings.TrimPrefix(r.URL.Path, "/view/")
-		http.ServeFile(w, r, filepath.Join("data", filename))
+		filePath, err := safeDataPath(filename)
+		if err != nil {
+			http.Error(w, "Invalid path", http.StatusBadRequest)
+			return
+		}
+		file, err := os.Open(filePath)
+		if err != nil {
+			http.Error(w, "File not found", http.StatusNotFound)
+			return
+		}
+		defer file.Close()
+		info, err := file.Stat()
+		if err != nil || info.IsDir() {
+			http.Error(w, "File not found", http.StatusNotFound)
+			return
+		}
+		baseFilename := filepath.Base(filename)
+		w.Header().Set("Content-Type", "application/octet-stream")
+		w.Header().Set("Content-Disposition", contentDisposition(baseFilename))
+		w.Header().Set("Content-Security-Policy", "default-src 'none'; sandbox")
+		w.Header().Set("Cache-Control", "no-store")
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		http.ServeContent(w, r, baseFilename, info.ModTime(), file)
 		log.Printf("Served %s for viewing\n", filename)
 	})
 
-	http.HandleFunc("/video-thumb/", func(w http.ResponseWriter, r *http.Request) {
-		id := filepath.Clean(strings.TrimPrefix(r.URL.Path, "/video-thumb/"))
-		if id == "." || id == ".." || filepath.IsAbs(id) || strings.HasPrefix(id, ".."+string(os.PathSeparator)) {
+	routes.HandleFunc("/video-thumb/", func(w http.ResponseWriter, r *http.Request) {
+		id := strings.TrimPrefix(r.URL.Path, "/video-thumb/")
+		if !strings.HasPrefix(id, "files/") {
+			http.Error(w, "Invalid video path", http.StatusBadRequest)
+			return
+		}
+		videoPath, err := safeDataPath(id)
+		if err != nil {
 			http.Error(w, "Invalid video path", http.StatusBadRequest)
 			return
 		}
@@ -1418,7 +1717,6 @@ func main() {
 			http.Error(w, "Not a video", http.StatusNotFound)
 			return
 		}
-		videoPath := filepath.Join("data", id)
 		videoInfo, err := os.Stat(videoPath)
 		if err != nil || videoInfo.IsDir() {
 			http.Error(w, "Video not found", http.StatusNotFound)
@@ -1444,7 +1742,7 @@ func main() {
 		http.ServeFile(w, r, thumbnailPath)
 	})
 
-	http.HandleFunc("/delete/", func(w http.ResponseWriter, r *http.Request) {
+	routes.HandleFunc("/delete/", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != "POST" {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 			return
@@ -1477,7 +1775,7 @@ func main() {
 			if output != "" {
 				output += "\n"
 			}
-			err = os.WriteFile(linksFilePath, []byte(output), 0644)
+			err = atomicWriteFile(linksFilePath, []byte(output), 0644)
 			if err != nil {
 				http.Error(w, "Failed to write links file after deletion", http.StatusInternalServerError)
 				return
@@ -1490,17 +1788,11 @@ func main() {
 			return
 		}
 		// Handle file and snippet deletion
-		err := os.Remove(filepath.Join("data", id))
-		if err != nil {
+		if err := removeStoredFile(id); err != nil {
 			log.Printf("Failed to delete %s: %v", id, err)
-			http.Error(w, "Failed to delete file", http.StatusInternalServerError)
+			http.Error(w, "Failed to delete file", http.StatusBadRequest)
 			return
 		}
-		os.Remove(videoThumbnailPath(id))
-		expirationTracker.mu.Lock()
-		delete(expirationTracker.Expirations, id)
-		expirationTracker.saveToFile()
-		expirationTracker.mu.Unlock()
 		notifyContentChange()
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
@@ -1508,7 +1800,7 @@ func main() {
 		log.Printf("Deleted %s\n", id)
 	})
 
-	http.HandleFunc("/edit/", func(w http.ResponseWriter, r *http.Request) {
+	routes.HandleFunc("/edit/", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != "POST" {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 			return
@@ -1518,14 +1810,19 @@ func main() {
 			http.Error(w, "Can only edit text snippets", http.StatusBadRequest)
 			return
 		}
+		fullPath, err := safeDataPath(id)
+		if err != nil {
+			http.Error(w, "Invalid path", http.StatusBadRequest)
+			return
+		}
 		content := r.FormValue("content")
 		if content == "" {
 			http.Error(w, "Content cannot be empty", http.StatusBadRequest)
 			return
 		}
-		err := os.WriteFile(filepath.Join("data", id), []byte(content), 0644)
+		err = atomicWriteFile(fullPath, []byte(content), 0644)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			http.Error(w, "Failed to save text", http.StatusInternalServerError)
 			return
 		}
 		notifyContentChange()
@@ -1534,10 +1831,8 @@ func main() {
 	})
 
 	// SSE Updates for content refresh
-	http.HandleFunc("/api/updates", handleContentUpdates)
+	routes.HandleFunc("/api/updates", handleContentUpdates)
 
-	// Start server
-	log.Fatal(http.ListenAndServe(*listenAddress, authMiddleware(http.DefaultServeMux)))
 }
 
 // Helper function to create files if they don't exist

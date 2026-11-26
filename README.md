@@ -101,8 +101,23 @@ docker run --name fengchuan \
 | 参数 | 默认值 | 说明 |
 | --- | --- | --- |
 | `-listen` | `:8080` | HTTP 监听地址和端口 |
-| `-password` | 需设置 | Web 登录密码，公开部署前必须修改 |
+| `-password` | 需设置 | Web 登录密码，也可通过 `FENGCHUAN_PASSWORD` 设置 |
+| `-api-key` | 自动生成 | API 独立密钥，也可通过 `FENGCHUAN_API_KEY` 设置 |
 | `-session-ttl` | `10m` | 普通登录会话有效期 |
+
+## 自动上传 API
+
+其他脚本或 AI 会话可以直接使用独立的 API Key 上传多个文件并附带更新说明。API Key 与网页登录密码分离，首次启动会自动写入 `data/api-key`：
+
+```bash
+curl -f \
+  -H "Authorization: Bearer $FENGCHUAN_API_KEY" \
+  -F "file=@dist/app.apk" \
+  -F "note=本次构建的更新说明" \
+  http://127.0.0.1:8099/api/upload
+```
+
+完整字段、响应格式和 PowerShell 客户端见 [docs/API.md](docs/API.md)。
 
 ## 数据目录
 
@@ -111,8 +126,11 @@ docker run --name fengchuan \
 - `data/text/`：文本消息
 - `data/files/`：上传文件
 - `data/thumbs/`：视频封面缓存
-- `data/access-log.jsonl`：访问记录
+- `data/access.log`：访问记录
 - `data/settings.json`：站点设置
+- `data/api-key`：API 独立密钥，请勿公开或提交到 Git
+- `data/session-key`：网页登录令牌签名密钥
+- `data/revoked-sessions.json`：已退出登录的令牌撤销记录
 
 升级程序时不要删除或覆盖 `data/`。项目不依赖外部数据库，备份 `data/` 即可保存全部内容。
 
@@ -121,6 +139,8 @@ docker run --name fengchuan \
 - 风传默认面向可信局域网使用，不内置 TLS。
 - 不要直接暴露到公网；如需远程访问，请放在带 HTTPS 和额外认证的反向代理后面。
 - 首次部署必须通过启动参数设置强密码。
+- API Key 与网页登录密码相互独立，泄露 API Key 时只需轮换 `data/api-key`。
+- 退出登录会把当前令牌加入服务端撤销记录，复制走的同一 Cookie 也会失效。
 - Markdown 查看器会转义原始 HTML，但仍建议只向可信用户开放上传权限。
 
 ## 项目来源
