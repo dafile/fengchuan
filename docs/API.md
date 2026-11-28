@@ -38,7 +38,7 @@ curl http://127.0.0.1:8099/api/health
 {
   "ok": true,
   "name": "FengChuan",
-  "version": "v1.15.0"
+  "version": "v1.15.1"
 }
 ```
 

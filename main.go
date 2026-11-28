@@ -282,7 +282,7 @@ var expirationTracker *ExpirationTracker
 var expirationOptions = []string{"Never", "1 hour", "4 hours", "1 day", "Custom"}
 
 // appVersion and changelogPath are shown in the header; keep in sync with CHANGELOG.md
-const appVersion = "v1.15.0"
+const appVersion = "v1.15.1"
 const changelogPath = "CHANGELOG.md"
 
 func initExpirationTracker() *ExpirationTracker {

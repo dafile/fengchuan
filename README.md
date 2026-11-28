@@ -48,7 +48,7 @@
 
 ### Windows 便携版
 
-从 [Releases](https://github.com/dafile/fengchuan/releases/latest) 下载最新的 Windows x64 压缩包，解压后运行 `启动风传.bat`。
+从 [Releases](https://github.com/dafile/fengchuan/releases/latest) 下载最新的 Windows x64 压缩包，解压后运行 `fengchuan-tray.vbs`，首次输入密码后会隐藏到系统托盘。
 
 默认监听 `8099` 端口。在同网段设备中打开：
 
@@ -131,6 +131,7 @@ curl -f \
 - `data/api-key`：API 独立密钥，请勿公开或提交到 Git
 - `data/session-key`：网页登录令牌签名密钥
 - `data/revoked-sessions.json`：已退出登录的令牌撤销记录
+- `data/service.log`、`data/service-error.log`：托盘模式下的服务日志
 
 升级程序时不要删除或覆盖 `data/`。项目不依赖外部数据库，备份 `data/` 即可保存全部内容。
 
